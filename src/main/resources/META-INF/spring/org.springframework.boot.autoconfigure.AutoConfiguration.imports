@@ -1,0 +1,7 @@
+com.firefly.common.data.config.EdaAutoConfiguration
+com.firefly.common.data.config.CqrsAutoConfiguration
+com.firefly.common.data.config.JobOrchestrationAutoConfiguration
+com.firefly.common.data.config.TransactionalEngineAutoConfiguration
+com.firefly.common.data.config.StepBridgeConfiguration
+com.firefly.common.data.config.ObservabilityAutoConfiguration
+com.firefly.common.data.resiliency.ResiliencyConfiguration
