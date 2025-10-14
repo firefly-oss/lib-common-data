@@ -16,6 +16,7 @@
 
 package com.firefly.common.data.service;
 
+import com.firefly.common.data.event.JobEventPublisher;
 import com.firefly.common.data.model.JobStage;
 import com.firefly.common.data.model.JobStageRequest;
 import com.firefly.common.data.model.JobStageResponse;
@@ -46,17 +47,34 @@ public abstract class AbstractResilientDataJobService implements DataJobService 
     private final JobTracingService tracingService;
     private final JobMetricsService metricsService;
     private final ResiliencyDecoratorService resiliencyService;
+    private final JobEventPublisher eventPublisher;
 
     protected AbstractResilientDataJobService(JobTracingService tracingService,
                                               JobMetricsService metricsService,
-                                              ResiliencyDecoratorService resiliencyService) {
+                                              ResiliencyDecoratorService resiliencyService,
+                                              JobEventPublisher eventPublisher) {
         this.tracingService = tracingService;
         this.metricsService = metricsService;
         this.resiliencyService = resiliencyService;
+        this.eventPublisher = eventPublisher;
+    }
+    
+    /**
+     * Constructor without JobEventPublisher for backward compatibility.
+     */
+    protected AbstractResilientDataJobService(JobTracingService tracingService,
+                                              JobMetricsService metricsService,
+                                              ResiliencyDecoratorService resiliencyService) {
+        this(tracingService, metricsService, resiliencyService, null);
     }
 
     @Override
     public final Mono<JobStageResponse> startJob(JobStageRequest request) {
+        // Publish job started event before execution
+        if (eventPublisher != null) {
+            eventPublisher.publishJobStarted(request);
+        }
+        
         return executeWithObservabilityAndResiliency(
                 JobStage.START,
                 request,
@@ -128,6 +146,11 @@ public abstract class AbstractResilientDataJobService implements DataJobService 
                     metricsService.recordJobStageExecution(stage, "success", duration);
                     metricsService.incrementJobStageCounter(stage, "success");
 
+                    // Publish stage completed event
+                    if (eventPublisher != null) {
+                        eventPublisher.publishJobStageCompleted(stage, response);
+                    }
+
                     if (response.isSuccess()) {
                         log.info("Successfully completed {} stage - executionId: {}, duration: {}ms, status: {}",
                                 stage, executionId, duration.toMillis(), response.getStatus());
@@ -145,6 +168,11 @@ public abstract class AbstractResilientDataJobService implements DataJobService 
                     metricsService.recordJobStageExecution(stage, "failure", duration);
                     metricsService.incrementJobStageCounter(stage, "failure");
                     metricsService.recordJobError(stage, error.getClass().getSimpleName());
+                    
+                    // Publish job failed event
+                    if (eventPublisher != null) {
+                        eventPublisher.publishJobFailed(executionId, request.getJobType(), error.getMessage(), error);
+                    }
 
                     log.error("Failed {} stage - executionId: {}, duration: {}ms, errorType: {}, errorMessage: {}",
                             stage, executionId, duration.toMillis(), error.getClass().getSimpleName(), error.getMessage());

@@ -124,13 +124,15 @@ public abstract class AbstractDataJobController implements DataJobController {
     }
 
     @Override
-    public Mono<JobStageResponse> getJobResult(String executionId, String requestId) {
-        log.info("Received GET job result request - executionId: {}, requestId: {}", executionId, requestId);
+    public Mono<JobStageResponse> getJobResult(String executionId, String requestId, String targetDtoClass) {
+        log.info("Received GET job result request - executionId: {}, requestId: {}, targetDtoClass: {}", 
+                executionId, requestId, targetDtoClass);
 
         JobStageRequest request = JobStageRequest.builder()
                 .stage(JobStage.RESULT)
                 .executionId(executionId)
                 .requestId(requestId)
+                .targetDtoClass(targetDtoClass)
                 .build();
 
         return dataJobService.getJobResult(request)

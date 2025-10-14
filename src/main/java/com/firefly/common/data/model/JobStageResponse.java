@@ -85,6 +85,16 @@ public class JobStageResponse {
     private Map<String, String> metadata;
 
     /**
+     * Gets the status, deriving from success flag if not set.
+     */
+    public JobExecutionStatus getStatus() {
+        if (status != null) {
+            return status;
+        }
+        return success ? JobExecutionStatus.COMPLETED : JobExecutionStatus.FAILED;
+    }
+    
+    /**
      * Creates a success response.
      */
     public static JobStageResponse success(JobStage stage, String executionId, String message) {
@@ -92,6 +102,7 @@ public class JobStageResponse {
                 .stage(stage)
                 .executionId(executionId)
                 .success(true)
+                .status(JobExecutionStatus.COMPLETED)
                 .message(message)
                 .timestamp(Instant.now())
                 .build();
@@ -105,6 +116,7 @@ public class JobStageResponse {
                 .stage(stage)
                 .executionId(executionId)
                 .success(false)
+                .status(JobExecutionStatus.FAILED)
                 .error(error)
                 .timestamp(Instant.now())
                 .build();

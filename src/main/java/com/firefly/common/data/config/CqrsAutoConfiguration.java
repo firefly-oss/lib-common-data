@@ -19,6 +19,7 @@ package com.firefly.common.data.config;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 
@@ -34,13 +35,15 @@ import org.springframework.context.annotation.Configuration;
     "com.firefly.common.cqrs.query.QueryHandler"
 })
 @ConditionalOnProperty(prefix = "firefly.data.cqrs", name = "enabled", havingValue = "true", matchIfMissing = true)
+@EnableConfigurationProperties(DataConfiguration.class)
 @ComponentScan(basePackages = {
     "com.firefly.common.cqrs"
 })
 @Slf4j
 public class CqrsAutoConfiguration {
     
-    public CqrsAutoConfiguration() {
-        log.info("Enabling lib-common-cqrs integration for lib-common-data");
+    public CqrsAutoConfiguration(DataConfiguration dataConfiguration) {
+        log.info("Enabling lib-common-cqrs integration for lib-common-data - enabled: {}", 
+                dataConfiguration.getCqrs().isEnabled());
     }
 }

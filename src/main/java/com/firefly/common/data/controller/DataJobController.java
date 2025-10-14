@@ -135,6 +135,9 @@ public interface DataJobController {
         @PathVariable String executionId,
         
         @Parameter(description = "Optional request ID for tracing")
-        @RequestParam(required = false) String requestId
+        @RequestParam(required = false) String requestId,
+        
+        @Parameter(description = "Target DTO class for result mapping")
+        @RequestParam(required = false) String targetDtoClass
     );
 }

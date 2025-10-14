@@ -16,9 +16,20 @@
 
 package com.firefly.common.data.config;
 
+import com.firefly.common.data.health.JobOrchestratorHealthIndicator;
+import com.firefly.common.data.mapper.JobResultMapperRegistry;
+import com.firefly.common.data.observability.JobMetricsService;
+import com.firefly.common.data.observability.JobTracingService;
+import com.firefly.common.data.resiliency.ResiliencyDecoratorService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.tracing.Tracer;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 
@@ -30,11 +41,16 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 @ConditionalOnProperty(prefix = "firefly.data.orchestration", name = "enabled", havingValue = "true", matchIfMissing = true)
-@EnableConfigurationProperties(JobOrchestrationProperties.class)
+@EnableConfigurationProperties({JobOrchestrationProperties.class, DataConfiguration.class})
 @ComponentScan(basePackages = {
     "com.firefly.common.data.orchestration",
     "com.firefly.common.data.service",
-    "com.firefly.common.data.controller"
+    "com.firefly.common.data.controller",
+    "com.firefly.common.data.health",
+    "com.firefly.common.data.observability",
+    "com.firefly.common.data.resiliency",
+    "com.firefly.common.data.mapper",
+    "com.firefly.common.data.event"
 })
 @Slf4j
 public class JobOrchestrationAutoConfiguration {
@@ -42,5 +58,45 @@ public class JobOrchestrationAutoConfiguration {
     public JobOrchestrationAutoConfiguration(JobOrchestrationProperties properties) {
         log.info("Enabling job orchestration for lib-common-data with orchestrator type: {}", 
                 properties.getOrchestratorType());
+    }
+    
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnClass(MeterRegistry.class)
+    public JobMetricsService jobMetricsService(MeterRegistry meterRegistry, 
+                                              JobOrchestrationProperties properties) {
+        log.debug("Creating JobMetricsService with prefix: {}", properties.getObservability().getMetricPrefix());
+        return new JobMetricsService(meterRegistry, properties);
+    }
+    
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnClass(Tracer.class)
+    public JobTracingService jobTracingService(Tracer tracer, JobOrchestrationProperties properties) {
+        log.debug("Creating JobTracingService with tracing enabled: {}", properties.getObservability().isTracingEnabled());
+        return new JobTracingService(tracer, properties);
+    }
+    
+    @Bean
+    @ConditionalOnMissingBean
+    public ResiliencyDecoratorService resiliencyDecoratorService(JobOrchestrationProperties properties) {
+        log.debug("Creating ResiliencyDecoratorService");
+        return new ResiliencyDecoratorService(properties);
+    }
+    
+    @Bean
+    @ConditionalOnMissingBean
+    public JobResultMapperRegistry jobResultMapperRegistry() {
+        log.debug("Creating JobResultMapperRegistry");
+        return new JobResultMapperRegistry();
+    }
+    
+    @Bean("jobOrchestratorHealthIndicator")
+    @ConditionalOnMissingBean(name = "jobOrchestratorHealthIndicator")
+    @ConditionalOnProperty(name = "firefly.data.orchestration.health-check.enabled", matchIfMissing = true)
+    @ConditionalOnClass(name = "org.springframework.boot.actuate.health.HealthIndicator")
+    public HealthIndicator jobOrchestratorHealthIndicator(JobOrchestrationProperties properties) {
+        log.debug("Creating JobOrchestratorHealthIndicator");
+        return new JobOrchestratorHealthIndicator(properties);
     }
 }
