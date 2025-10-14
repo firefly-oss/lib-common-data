@@ -58,6 +58,13 @@ public class ResiliencyDecoratorService {
         log.info("Initialized ResiliencyDecoratorService with circuit breaker: {}, retry: {}, rate limiter: {}, bulkhead: {}",
                 circuitBreaker.isPresent(), retry.isPresent(), rateLimiter.isPresent(), bulkhead.isPresent());
     }
+    
+    /**
+     * Simple constructor that creates empty optionals for all resilience components.
+     */
+    public ResiliencyDecoratorService(JobOrchestrationProperties properties) {
+        this(properties, Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
+    }
 
     /**
      * Decorates a Mono with all configured resiliency patterns.

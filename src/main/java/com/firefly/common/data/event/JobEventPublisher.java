@@ -134,7 +134,7 @@ public class JobEventPublisher {
             "JOB_COMPLETED",
             jobType,
             executionId,
-            JobExecutionStatus.COMPLETED,
+            JobExecutionStatus.SUCCEEDED,
             "Job completed successfully",
             results
         );

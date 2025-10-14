@@ -150,6 +150,8 @@ Retrieves final results, performs mapping/transformation, and cleanup.
 4. Clean up temporary resources
 5. Return mapped/transformed final results
 
+**Note:** The response status will be `SUCCEEDED` for successful operations, `FAILED` for failures, or `RUNNING` if still in progress.
+
 **Example:**
 ```java
 JobStageRequest request = JobStageRequest.builder()

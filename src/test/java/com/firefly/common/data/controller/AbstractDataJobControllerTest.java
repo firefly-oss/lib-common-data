@@ -148,7 +148,7 @@ class AbstractDataJobControllerTest {
                 .thenReturn(Mono.just(expectedResponse));
 
         // When & Then
-        StepVerifier.create(controller.getJobResult(executionId, requestId))
+        StepVerifier.create(controller.getJobResult(executionId, requestId, null))
                 .assertNext(response -> {
                     assertThat(response.isSuccess()).isTrue();
                     assertThat(response.getExecutionId()).isEqualTo(executionId);

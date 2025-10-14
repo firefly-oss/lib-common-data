@@ -91,7 +91,7 @@ public class JobStageResponse {
         if (status != null) {
             return status;
         }
-        return success ? JobExecutionStatus.COMPLETED : JobExecutionStatus.FAILED;
+        return success ? JobExecutionStatus.SUCCEEDED : JobExecutionStatus.FAILED;
     }
     
     /**
@@ -102,7 +102,7 @@ public class JobStageResponse {
                 .stage(stage)
                 .executionId(executionId)
                 .success(true)
-                .status(JobExecutionStatus.COMPLETED)
+                .status(JobExecutionStatus.SUCCEEDED)
                 .message(message)
                 .timestamp(Instant.now())
                 .build();

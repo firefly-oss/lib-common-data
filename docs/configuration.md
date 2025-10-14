@@ -434,9 +434,9 @@ firefly:
     orchestration:
       enabled: true
       orchestrator-type: AWS_STEP_FUNCTIONS
-      aws:
+      aws-step-functions:
         region: ${AWS_REGION:us-east-1}
-        state-machine-arn-prefix: arn:aws:states:${AWS_REGION}:${AWS_ACCOUNT_ID}:stateMachine
+        state-machine-arn: arn:aws:states:${AWS_REGION}:${AWS_ACCOUNT_ID}:stateMachine:DataJobStateMachine
 
   eda:
     publishers:

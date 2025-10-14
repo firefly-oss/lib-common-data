@@ -105,7 +105,7 @@ class JobEventPublisherTest {
         JobStageResponse response = JobStageResponse.builder()
                 .executionId("exec-123")
                 .success(true)
-                .status(JobExecutionStatus.COMPLETED)
+                .status(JobExecutionStatus.SUCCEEDED)
                 .data(Map.of("result", "success"))
                 .build();
 
@@ -119,7 +119,7 @@ class JobEventPublisherTest {
         JobEvent capturedEvent = eventCaptor.getValue();
         assertEquals("JOB_STAGE_START_COMPLETED", capturedEvent.getEventType());
         assertEquals("exec-123", capturedEvent.getExecutionId());
-        assertEquals(JobExecutionStatus.COMPLETED, capturedEvent.getStatus());
+        assertEquals(JobExecutionStatus.SUCCEEDED, capturedEvent.getStatus());
         assertNotNull(capturedEvent.getData());
     }
 
@@ -171,7 +171,7 @@ class JobEventPublisherTest {
         assertEquals("JOB_COMPLETED", capturedEvent.getEventType());
         assertEquals("test-job", capturedEvent.getJobType());
         assertEquals("exec-123", capturedEvent.getExecutionId());
-        assertEquals(JobExecutionStatus.COMPLETED, capturedEvent.getStatus());
+        assertEquals(JobExecutionStatus.SUCCEEDED, capturedEvent.getStatus());
         assertEquals("Job completed successfully", capturedEvent.getMessage());
         assertEquals(results, capturedEvent.getData());
     }

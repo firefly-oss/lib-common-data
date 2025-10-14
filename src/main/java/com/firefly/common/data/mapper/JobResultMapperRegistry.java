@@ -77,6 +77,13 @@ public class JobResultMapperRegistry {
         log.info("JobResultMapperRegistry initialized successfully with {} mapper(s)", 
                 mappersByTargetType.size());
     }
+    
+    /**
+     * Default constructor for cases where no mappers are available.
+     */
+    public JobResultMapperRegistry() {
+        log.info("Initializing JobResultMapperRegistry with no mappers");
+    }
 
     /**
      * Registers a mapper in the registry.

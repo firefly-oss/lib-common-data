@@ -22,7 +22,7 @@ import com.firefly.common.data.observability.JobMetricsService;
 import com.firefly.common.data.observability.JobTracingService;
 import com.firefly.common.data.resiliency.ResiliencyDecoratorService;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.tracing.Tracer;
+import io.micrometer.observation.ObservationRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -71,10 +71,10 @@ public class JobOrchestrationAutoConfiguration {
     
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnClass(Tracer.class)
-    public JobTracingService jobTracingService(Tracer tracer, JobOrchestrationProperties properties) {
+    @ConditionalOnClass(ObservationRegistry.class)
+    public JobTracingService jobTracingService(ObservationRegistry observationRegistry, JobOrchestrationProperties properties) {
         log.debug("Creating JobTracingService with tracing enabled: {}", properties.getObservability().isTracingEnabled());
-        return new JobTracingService(tracer, properties);
+        return new JobTracingService(observationRegistry, properties);
     }
     
     @Bean
@@ -95,7 +95,7 @@ public class JobOrchestrationAutoConfiguration {
     @ConditionalOnMissingBean(name = "jobOrchestratorHealthIndicator")
     @ConditionalOnProperty(name = "firefly.data.orchestration.health-check.enabled", matchIfMissing = true)
     @ConditionalOnClass(name = "org.springframework.boot.actuate.health.HealthIndicator")
-    public HealthIndicator jobOrchestratorHealthIndicator(JobOrchestrationProperties properties) {
+    public JobOrchestratorHealthIndicator jobOrchestratorHealthIndicator(JobOrchestrationProperties properties) {
         log.debug("Creating JobOrchestratorHealthIndicator");
         return new JobOrchestratorHealthIndicator(properties);
     }

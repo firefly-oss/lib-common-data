@@ -48,6 +48,13 @@ public class JobOrchestratorHealthIndicator implements ReactiveHealthIndicator {
         this.properties = properties;
         this.lastHealth = Health.unknown().build();
     }
+    
+    /**
+     * Constructor without orchestrator for basic health checks.
+     */
+    public JobOrchestratorHealthIndicator(JobOrchestrationProperties properties) {
+        this(Optional.empty(), properties);
+    }
 
     @Override
     public Mono<Health> health() {
