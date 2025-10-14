@@ -88,6 +88,11 @@ public class JobOrchestrationProperties {
      */
     private HealthCheckConfig healthCheck = new HealthCheckConfig();
 
+    /**
+     * Persistence configuration for audit trail and execution results.
+     */
+    private PersistenceConfig persistence = new PersistenceConfig();
+
     @Data
     public static class AirflowConfig {
         /**
@@ -366,5 +371,73 @@ public class JobOrchestrationProperties {
          * Whether to include detailed health information.
          */
         private boolean showDetails = true;
+    }
+
+    @Data
+    public static class PersistenceConfig {
+        /**
+         * Whether audit trail persistence is enabled.
+         */
+        private boolean auditEnabled = true;
+
+        /**
+         * Whether to include stack traces in audit entries.
+         */
+        private boolean includeStackTraces = false;
+
+        /**
+         * Audit trail retention period in days (0 = keep forever).
+         */
+        private int auditRetentionDays = 90;
+
+        /**
+         * Whether job execution result persistence is enabled.
+         */
+        private boolean resultPersistenceEnabled = true;
+
+        /**
+         * Result retention period in days (0 = keep forever).
+         */
+        private int resultRetentionDays = 30;
+
+        /**
+         * Whether to enable result caching.
+         */
+        private boolean enableResultCaching = true;
+
+        /**
+         * Result cache TTL in seconds.
+         */
+        private long resultCacheTtlSeconds = 3600; // 1 hour
+
+        /**
+         * Maximum size of data to persist (in bytes, 0 = unlimited).
+         */
+        private long maxDataSizeBytes = 10485760; // 10 MB
+
+        /**
+         * Whether to persist raw output data.
+         */
+        private boolean persistRawOutput = true;
+
+        /**
+         * Whether to persist transformed output data.
+         */
+        private boolean persistTransformedOutput = true;
+
+        /**
+         * Whether to persist input parameters.
+         */
+        private boolean persistInputParameters = true;
+
+        /**
+         * Whether to sanitize sensitive data before persisting.
+         */
+        private boolean sanitizeSensitiveData = true;
+
+        /**
+         * List of parameter keys to exclude from persistence (comma-separated).
+         */
+        private String excludedParameterKeys = "password,secret,token,apiKey";
     }
 }

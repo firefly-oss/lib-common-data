@@ -20,8 +20,10 @@ import com.firefly.common.data.health.JobOrchestratorHealthIndicator;
 import com.firefly.common.data.observability.JobMetricsService;
 import com.firefly.common.data.observability.JobTracingService;
 import com.firefly.common.data.orchestration.port.JobOrchestrator;
+import com.firefly.common.data.util.TracingContextExtractor;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.tracing.Tracer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.actuate.autoconfigure.health.ConditionalOnEnabledHealthIndicator;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -47,8 +49,16 @@ public class ObservabilityAutoConfiguration {
     @ConditionalOnClass(ObservationRegistry.class)
     @ConditionalOnProperty(prefix = "firefly.data.orchestration.observability", name = "tracing-enabled", havingValue = "true", matchIfMissing = true)
     public JobTracingService jobTracingService(ObservationRegistry observationRegistry,
-                                               JobOrchestrationProperties properties) {
+                                               JobOrchestrationProperties properties,
+                                               Optional<Tracer> tracer) {
         log.info("Configuring job tracing service with Micrometer Observation");
+
+        // Configure the TracingContextExtractor with the tracer if available
+        tracer.ifPresent(t -> {
+            TracingContextExtractor.setTracer(t);
+            log.info("Configured TracingContextExtractor with Tracer: {}", t.getClass().getSimpleName());
+        });
+
         return new JobTracingService(observationRegistry, properties);
     }
 
