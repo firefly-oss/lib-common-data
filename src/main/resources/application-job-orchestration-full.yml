@@ -1,0 +1,141 @@
+# Full configuration example for Firefly Common Data Library
+# This file demonstrates all available configuration options including
+# observability, resiliency, and health checks
+
+spring:
+  application:
+    name: firefly-data-service
+
+firefly:
+  data:
+    orchestration:
+      # Enable/disable job orchestration
+      enabled: true
+
+      # Orchestrator type: APACHE_AIRFLOW, AWS_STEP_FUNCTIONS
+      orchestrator-type: APACHE_AIRFLOW
+      
+      # Default timeout for job executions
+      default-timeout: 24h
+      
+      # Maximum retry attempts for job operations
+      max-retries: 3
+      
+      # Delay between retry attempts
+      retry-delay: 5s
+      
+      # Event publishing configuration
+      publish-job-events: true
+      job-events-topic: data-job-events
+      
+      # Apache Airflow Configuration
+      airflow:
+        base-url: http://airflow.example.com:8080
+        api-version: v1
+        authentication-type: BASIC
+        username: airflow
+        password: airflow
+        # bearer-token: YOUR_BEARER_TOKEN  # For token-based auth
+        dag-id-prefix: data_job
+        connection-timeout: 10s
+        request-timeout: 30s
+        verify-ssl: true
+        max-concurrent-dag-runs: 10
+
+      # AWS Step Functions Configuration
+      aws-step-functions:
+        region: us-east-1
+        state-machine-arn: arn:aws:states:us-east-1:123456789012:stateMachine:DataJobStateMachine
+        use-default-credentials: true
+        # access-key-id: YOUR_ACCESS_KEY
+        # secret-access-key: YOUR_SECRET_KEY
+        # session-token: YOUR_SESSION_TOKEN  # For temporary credentials
+        connection-timeout: 10s
+        request-timeout: 30s
+        max-concurrent-executions: 100
+        enable-x-ray-tracing: false
+      
+      # Resiliency Configuration
+      resiliency:
+        # Circuit Breaker
+        circuit-breaker-enabled: true
+        circuit-breaker-failure-rate-threshold: 50.0
+        circuit-breaker-slow-call-rate-threshold: 100.0
+        circuit-breaker-slow-call-duration-threshold: 60s
+        circuit-breaker-wait-duration-in-open-state: 60s
+        circuit-breaker-permitted-number-of-calls-in-half-open-state: 10
+        circuit-breaker-sliding-window-size: 100
+        circuit-breaker-minimum-number-of-calls: 10
+        
+        # Retry
+        retry-enabled: true
+        retry-max-attempts: 3
+        retry-wait-duration: 5s
+        
+        # Rate Limiter
+        rate-limiter-enabled: false
+        rate-limiter-limit-for-period: 100
+        rate-limiter-limit-refresh-period: 1s
+        rate-limiter-timeout-duration: 5s
+        
+        # Bulkhead
+        bulkhead-enabled: false
+        bulkhead-max-concurrent-calls: 25
+        bulkhead-max-wait-duration: 500ms
+      
+      # Observability Configuration
+      observability:
+        # Tracing
+        tracing-enabled: true
+        trace-job-start: true
+        trace-job-check: true
+        trace-job-collect: true
+        trace-job-result: true
+        include-job-parameters-in-traces: false
+        include-job-results-in-traces: false
+        
+        # Metrics
+        metrics-enabled: true
+        metric-prefix: firefly.data.job
+      
+      # Health Check Configuration
+      health-check:
+        enabled: true
+        timeout: 5s
+        interval: 30s
+        check-connectivity: true
+        show-details: true
+
+# Spring Boot Actuator Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus,info
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  health:
+    defaults:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        firefly.data.job: true
+  tracing:
+    sampling:
+      probability: 1.0
+
+# Micrometer Tracing Configuration
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+  level:
+    com.firefly.common.data: DEBUG
+    io.github.resilience4j: DEBUG
+

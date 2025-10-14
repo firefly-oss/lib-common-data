@@ -1,0 +1,18 @@
+${AnsiColor.RED}
+  _____.__                _____.__
+_/ ____\__|______   _____/ ____\  | ___.__.
+\   __\|  \_  __ \_/ __ \   __\|  |<   |  |
+ |  |  |  ||  | \/\  ___/|  |  |  |_\___  |
+ |__|  |__||__|    \___  >__|  |____/ ____|
+                       \/           \/
+${AnsiColor.RED}${AnsiStyle.BOLD}:: firefly-data ::               (v2025-08)${AnsiColor.DEFAULT}${AnsiStyle.NORMAL}
+
+${AnsiColor.GREEN}${AnsiStyle.BOLD}(c)2025 Firefly Software Solutions Inc${AnsiColor.DEFAULT}${AnsiStyle.NORMAL}
+${AnsiColor.GREEN}${AnsiStyle.BOLD}Licensed under Apache 2.0${AnsiColor.DEFAULT}${AnsiStyle.NORMAL}
+
+${AnsiStyle.BOLD}Spring Boot Version:${AnsiStyle.NORMAL} ${spring-boot.version}
+${AnsiStyle.BOLD}Application:${AnsiStyle.NORMAL} ${spring.application.name:Unknown}
+${AnsiStyle.BOLD}Application Description:${AnsiStyle.NORMAL} ${spring.application.description:Unknown}
+${AnsiStyle.BOLD}Application Version:${AnsiStyle.NORMAL} ${spring.application.version:Unknown}
+${AnsiStyle.BOLD}Application SwaggerUI:${AnsiStyle.NORMAL} http://${server.address:localhost}:${server.port}${springdoc.swagger-ui.path}
+${AnsiColor.YELLOW}${AnsiStyle.BOLD}⇩⇩⇩ Logs start below ⇩⇩⇩${AnsiStyle.NORMAL}${AnsiColor.DEFAULT}
