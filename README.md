@@ -45,6 +45,7 @@ The `lib-common-data` library provides a unified approach to building data proce
 - ✅ **Scalability** - CQRS and reactive programming support
 - ✅ **Reliability** - SAGA pattern for distributed transactions
 - ✅ **Resiliency** - Circuit breaker, retry, rate limiting, and bulkhead patterns
+- ✅ **Persistence** - Audit trail and execution result persistence with hexagonal architecture
 
 ---
 
@@ -88,7 +89,14 @@ All core-data microservices follow the same job lifecycle:
 ### 📊 Observability & Monitoring
 
 - **Distributed Tracing** - Micrometer Observation integration for end-to-end tracing
+  - ✅ **Real Trace ID Extraction** - Extracts actual trace IDs from Brave/OpenTelemetry (not generated timestamps)
+  - ✅ **Real Span ID Extraction** - Extracts actual span IDs from current observation
+  - ✅ **Automatic Configuration** - Tracer automatically injected via Spring Boot
+  - ✅ **Full Correlation** - Works with Zipkin, Jaeger, and other distributed tracing systems
 - **Metrics Collection** - Comprehensive metrics for job execution, errors, and performance
+  - ✅ **Precise Data Size Calculation** - Actual byte size via JSON serialization (not toString() estimation)
+  - ✅ **Human-Readable Formatting** - Automatic conversion to KB, MB, GB
+  - ✅ **Size Validation** - Built-in utilities to check data size limits
 - **Health Checks** - Reactive health indicators for orchestrator availability
 - **Prometheus Integration** - Ready-to-use metrics export for monitoring dashboards
 - **Structured Logging** - Comprehensive logging for all job lifecycle phases (START, CHECK, COLLECT, RESULT)
@@ -100,6 +108,15 @@ All core-data microservices follow the same job lifecycle:
 - **Rate Limiter** - Controls request rate to prevent system overload
 - **Bulkhead** - Isolates resources to prevent resource exhaustion
 - **Resilience4j Integration** - Production-ready resiliency patterns
+
+### 💾 Persistence & Audit Trail
+
+- **Audit Trail** - Automatic recording of all job operations for compliance and debugging
+- **Execution Results** - Persistent storage of job results with caching support
+- **Hexagonal Architecture** - Port/adapter pattern for flexible persistence implementations
+- **Multi-Database Support** - JPA, MongoDB, DynamoDB, Redis, or custom implementations
+- **Configurable Retention** - Automatic cleanup of old audit entries and results
+- **Sensitive Data Sanitization** - Built-in protection for sensitive information
 
 ## Installation
 
@@ -129,9 +146,9 @@ firefly:
     orchestration:
       enabled: true
       orchestrator-type: AWS_STEP_FUNCTIONS
-      aws:
+      aws-step-functions:
         region: us-east-1
-        state-machine-arn-prefix: arn:aws:states:us-east-1:123456789012:stateMachine
+        state-machine-arn: arn:aws:states:us-east-1:123456789012:stateMachine:DataJobStateMachine
     transactional:
       enabled: true
   stepevents:
@@ -428,7 +445,68 @@ public class MyDataJobController implements DataJobController {
 }
 ```
 
-### 5. Using SAGAs for Distributed Data Processing (Optional)
+### 5. Implementing Persistence Adapters (Optional)
+
+To enable audit trail and execution result persistence, implement repository adapters in your microservice:
+
+```java
+@Repository
+@Slf4j
+public class R2dbcJobAuditRepositoryAdapter implements JobAuditRepository {
+
+    private final R2dbcJobAuditEntityRepository r2dbcRepository;
+    private final ObjectMapper objectMapper;
+
+    public R2dbcJobAuditRepositoryAdapter(
+            R2dbcJobAuditEntityRepository r2dbcRepository,
+            ObjectMapper objectMapper) {
+        this.r2dbcRepository = r2dbcRepository;
+        this.objectMapper = objectMapper;
+    }
+
+    @Override
+    public Mono<JobAuditEntry> save(JobAuditEntry entry) {
+        return Mono.fromCallable(() -> toEntity(entry))
+                .flatMap(r2dbcRepository::save)
+                .map(this::toDomain)
+                .doOnError(error -> log.error("Failed to save audit entry", error));
+    }
+
+    @Override
+    public Flux<JobAuditEntry> findByExecutionId(String executionId) {
+        return r2dbcRepository.findByExecutionId(executionId)
+                .map(this::toDomain);
+    }
+
+    // Implement other methods...
+}
+
+@Repository
+public interface R2dbcJobAuditEntityRepository extends ReactiveCrudRepository<JobAuditEntity, String> {
+    Flux<JobAuditEntity> findByExecutionId(String executionId);
+    Flux<JobAuditEntity> findByRequestId(String requestId);
+    // Other query methods...
+}
+```
+
+**Configuration:**
+
+```yaml
+firefly:
+  data:
+    orchestration:
+      enabled: true
+      persistence:
+        audit-enabled: true
+        result-persistence-enabled: true
+        audit-retention-days: 90
+        result-retention-days: 30
+        enable-result-caching: true
+```
+
+For complete implementation guide with R2DBC, see [Persistence Documentation](docs/persistence.md).
+
+### 6. Using SAGAs for Distributed Data Processing (Optional)
 
 For complex workflows requiring distributed transactions:
 
@@ -510,9 +588,9 @@ firefly:
       retry-delay: 5s
       publish-job-events: true
       job-events-topic: data-job-events
-      aws:
+      aws-step-functions:
         region: us-east-1
-        state-machine-arn-prefix: arn:aws:states:us-east-1:123456789012:stateMachine
+        state-machine-arn: arn:aws:states:us-east-1:123456789012:stateMachine:DataJobStateMachine
         use-default-credentials: true
 ```
 
@@ -633,6 +711,30 @@ private void publishJobEvent(JobStage stage, String executionId) {
     }
 }
 ```
+
+### 4. Persistence & Audit Trail
+
+The library automatically persists audit trail and execution results when repository adapters are provided:
+
+```java
+// Audit trail is automatically recorded for all operations
+// No code changes needed - just provide repository adapters
+
+// Query audit trail
+auditService.getAuditTrail(executionId)
+    .subscribe(entries -> log.info("Audit trail: {}", entries));
+
+// Query execution results
+resultService.getResult(executionId)
+    .subscribe(result -> log.info("Result: {}", result));
+
+// Get cached result
+resultService.getCachedResult(executionId)
+    .filter(JobExecutionResult::isCacheableAndValid)
+    .subscribe(cached -> log.info("Using cached result"));
+```
+
+For implementation details, see [Persistence Documentation](docs/persistence.md).
 
 ## Extending the Library
 
