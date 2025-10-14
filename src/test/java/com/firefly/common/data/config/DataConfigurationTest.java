@@ -24,8 +24,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest(classes = DataConfigurationTest.TestConfig.class)
+@SpringBootTest(classes = DataConfigurationTest.TestConfig.class, webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @TestPropertySource(properties = {
+    "spring.application.name=test-data-config",
     "firefly.data.eda.enabled=false",
     "firefly.data.cqrs.enabled=true",
     "firefly.data.orchestration.enabled=true",

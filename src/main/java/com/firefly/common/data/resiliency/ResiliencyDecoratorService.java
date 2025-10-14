@@ -26,7 +26,6 @@ import io.github.resilience4j.reactor.ratelimiter.operator.RateLimiterOperator;
 import io.github.resilience4j.reactor.retry.RetryOperator;
 import io.github.resilience4j.retry.Retry;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.util.Optional;
@@ -34,7 +33,6 @@ import java.util.Optional;
 /**
  * Service for applying resiliency patterns to reactive operations.
  */
-@Service
 @Slf4j
 public class ResiliencyDecoratorService {
 

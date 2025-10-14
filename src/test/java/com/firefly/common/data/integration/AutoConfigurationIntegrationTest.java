@@ -38,40 +38,44 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.test.context.TestPropertySource;
+import org.mockito.Mockito;
 
 import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest(classes = AutoConfigurationIntegrationTest.TestConfig.class)
+@SpringBootTest(classes = AutoConfigurationIntegrationTest.TestConfig.class, webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @TestPropertySource(properties = {
-    "firefly.data.orchestration.enabled=true",
-    "firefly.data.orchestration.orchestrator-type=MOCK",
-    "firefly.data.orchestration.publish-job-events=true",
-    "firefly.data.orchestration.job-events-topic=test-job-events",
-    "firefly.data.orchestration.default-timeout=PT1H",
-    "firefly.data.orchestration.max-retries=3",
-    "firefly.data.orchestration.retry-delay=PT5S",
-    "firefly.data.orchestration.airflow.base-url=http://test-airflow:8080",
-    "firefly.data.orchestration.airflow.username=test-user",
-    "firefly.data.orchestration.airflow.password=test-pass",
-    "firefly.data.orchestration.airflow.dag-id-prefix=test_data_job",
-    "firefly.data.orchestration.observability.tracing-enabled=true",
-    "firefly.data.orchestration.observability.metrics-enabled=true",
-    "firefly.data.orchestration.observability.metric-prefix=test.firefly.data.job",
-    "firefly.data.orchestration.health-check.enabled=true",
-    "firefly.data.orchestration.health-check.timeout=PT5S",
-    "firefly.stepevents.enabled=true",
-    "firefly.stepevents.topic=test-step-events",
-    "firefly.stepevents.include-job-context=true",
-    "firefly.data.eda.enabled=true",
-    "firefly.data.cqrs.enabled=true",
-    "firefly.data.transactional.enabled=false"
+        "spring.application.name=test-app",
+        "firefly.data.orchestration.enabled=true",
+        "firefly.data.orchestration.orchestrator-type=MOCK",
+        "firefly.data.orchestration.publish-job-events=true",
+        "firefly.data.orchestration.job-events-topic=test-job-events",
+        "firefly.data.orchestration.default-timeout=PT1H",
+        "firefly.data.orchestration.max-retries=3",
+        "firefly.data.orchestration.retry-delay=PT5S",
+        "firefly.data.orchestration.airflow.base-url=http://test-airflow:8080",
+        "firefly.data.orchestration.airflow.username=test-user",
+        "firefly.data.orchestration.airflow.password=test-pass",
+        "firefly.data.orchestration.airflow.dag-id-prefix=test_data_job",
+        "firefly.data.orchestration.observability.tracing-enabled=true",
+        "firefly.data.orchestration.observability.metrics-enabled=true",
+        "firefly.data.orchestration.observability.metric-prefix=test.firefly.data.job",
+        "firefly.data.orchestration.health-check.enabled=true",
+        "firefly.data.orchestration.health-check.timeout=PT5S",
+        "firefly.stepevents.enabled=true",
+        "firefly.stepevents.topic=test-step-events",
+        "firefly.stepevents.include-job-context=true",
+        "firefly.data.eda.enabled=true",
+        "firefly.data.cqrs.enabled=true",
+        "firefly.data.transactional.enabled=false"
 })
 class AutoConfigurationIntegrationTest {
 
     @Configuration
-    @EnableAutoConfiguration
+    @EnableAutoConfiguration(exclude = {
+            com.firefly.common.eda.config.EdaAutoConfiguration.class
+    })
     static class TestConfig {
         
         @Bean
@@ -82,6 +86,12 @@ class AutoConfigurationIntegrationTest {
         @Bean
         public ObservationRegistry observationRegistry() {
             return ObservationRegistry.create();
+        }
+        
+        @Bean
+        public com.firefly.common.eda.publisher.EventPublisherFactory eventPublisherFactory() {
+            // Create a minimal mock EventPublisherFactory for testing StepEventsProperties
+            return org.mockito.Mockito.mock(com.firefly.common.eda.publisher.EventPublisherFactory.class);
         }
     }
 
