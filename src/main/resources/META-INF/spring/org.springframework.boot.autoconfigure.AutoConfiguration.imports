@@ -5,3 +5,4 @@ com.firefly.common.data.config.TransactionalEngineAutoConfiguration
 com.firefly.common.data.config.StepBridgeConfiguration
 com.firefly.common.data.config.ObservabilityAutoConfiguration
 com.firefly.common.data.resiliency.ResiliencyConfiguration
+com.firefly.common.data.config.PersistenceAutoConfiguration
