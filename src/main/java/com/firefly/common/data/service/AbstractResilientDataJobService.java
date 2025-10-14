@@ -22,6 +22,8 @@ import com.firefly.common.data.model.JobStageRequest;
 import com.firefly.common.data.model.JobStageResponse;
 import com.firefly.common.data.observability.JobMetricsService;
 import com.firefly.common.data.observability.JobTracingService;
+import com.firefly.common.data.persistence.service.JobAuditService;
+import com.firefly.common.data.persistence.service.JobExecutionResultService;
 import com.firefly.common.data.resiliency.ResiliencyDecoratorService;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
@@ -31,13 +33,15 @@ import java.time.Instant;
 
 /**
  * Abstract base class for DataJobService implementations that provides
- * built-in observability and resiliency features.
- * 
+ * built-in observability, resiliency, and persistence features.
+ *
  * This class automatically wraps all job operations with:
  * - Distributed tracing via Micrometer
  * - Metrics collection
  * - Circuit breaker, retry, rate limiting, and bulkhead patterns
- * 
+ * - Audit trail persistence
+ * - Execution result persistence
+ *
  * Subclasses should implement the protected abstract methods to provide
  * the actual business logic.
  */
@@ -48,24 +52,40 @@ public abstract class AbstractResilientDataJobService implements DataJobService 
     private final JobMetricsService metricsService;
     private final ResiliencyDecoratorService resiliencyService;
     private final JobEventPublisher eventPublisher;
+    private final JobAuditService auditService;
+    private final JobExecutionResultService resultService;
 
     protected AbstractResilientDataJobService(JobTracingService tracingService,
                                               JobMetricsService metricsService,
                                               ResiliencyDecoratorService resiliencyService,
-                                              JobEventPublisher eventPublisher) {
+                                              JobEventPublisher eventPublisher,
+                                              JobAuditService auditService,
+                                              JobExecutionResultService resultService) {
         this.tracingService = tracingService;
         this.metricsService = metricsService;
         this.resiliencyService = resiliencyService;
         this.eventPublisher = eventPublisher;
+        this.auditService = auditService;
+        this.resultService = resultService;
     }
-    
+
+    /**
+     * Constructor without persistence services for backward compatibility.
+     */
+    protected AbstractResilientDataJobService(JobTracingService tracingService,
+                                              JobMetricsService metricsService,
+                                              ResiliencyDecoratorService resiliencyService,
+                                              JobEventPublisher eventPublisher) {
+        this(tracingService, metricsService, resiliencyService, eventPublisher, null, null);
+    }
+
     /**
      * Constructor without JobEventPublisher for backward compatibility.
      */
     protected AbstractResilientDataJobService(JobTracingService tracingService,
                                               JobMetricsService metricsService,
                                               ResiliencyDecoratorService resiliencyService) {
-        this(tracingService, metricsService, resiliencyService, null);
+        this(tracingService, metricsService, resiliencyService, null, null, null);
     }
 
     @Override
@@ -110,7 +130,7 @@ public abstract class AbstractResilientDataJobService implements DataJobService 
     }
 
     /**
-     * Executes an operation with full observability and resiliency.
+     * Executes an operation with full observability, resiliency, and persistence.
      */
     private Mono<JobStageResponse> executeWithObservabilityAndResiliency(
             JobStage stage,
@@ -119,12 +139,19 @@ public abstract class AbstractResilientDataJobService implements DataJobService 
 
         Instant startTime = Instant.now();
         String executionId = request.getExecutionId();
+        String orchestratorType = getOrchestratorType();
 
         // Log stage start with request details
         log.info("Starting {} stage - executionId: {}, parameters: {}",
                 stage, executionId, request.getParameters() != null ? request.getParameters().keySet() : "none");
         log.debug("Full request details for {} stage - executionId: {}, request: {}",
                 stage, executionId, request);
+
+        // Record audit entry for operation started
+        if (auditService != null) {
+            auditService.recordOperationStarted(request, orchestratorType)
+                    .subscribe(); // Fire and forget
+        }
 
         // Wrap with tracing
         Mono<JobStageResponse> tracedOperation = tracingService.traceJobOperation(
@@ -136,7 +163,7 @@ public abstract class AbstractResilientDataJobService implements DataJobService 
         // Wrap with resiliency patterns
         Mono<JobStageResponse> resilientOperation = resiliencyService.decorate(tracedOperation);
 
-        // Add metrics and logging
+        // Add metrics, logging, and persistence
         return resilientOperation
                 .doOnSubscribe(subscription -> {
                     log.debug("Subscribed to {} stage operation for execution {}", stage, executionId);
@@ -145,6 +172,27 @@ public abstract class AbstractResilientDataJobService implements DataJobService 
                     Duration duration = Duration.between(startTime, Instant.now());
                     metricsService.recordJobStageExecution(stage, "success", duration);
                     metricsService.incrementJobStageCounter(stage, "success");
+
+                    // Record audit entry for operation completed
+                    if (auditService != null) {
+                        auditService.recordOperationCompleted(request, response, duration.toMillis(), orchestratorType)
+                                .subscribe(); // Fire and forget
+                    }
+
+                    // Persist execution result for COLLECT and RESULT stages
+                    if (resultService != null && (stage == JobStage.COLLECT || stage == JobStage.RESULT)) {
+                        if (response.isSuccess()) {
+                            resultService.saveSuccessResult(
+                                    request,
+                                    response,
+                                    startTime,
+                                    stage == JobStage.COLLECT ? response.getData() : null,
+                                    stage == JobStage.RESULT ? response.getData() : null,
+                                    orchestratorType,
+                                    getJobDefinition()
+                            ).subscribe(); // Fire and forget
+                        }
+                    }
 
                     // Publish stage completed event
                     if (eventPublisher != null) {
@@ -168,7 +216,25 @@ public abstract class AbstractResilientDataJobService implements DataJobService 
                     metricsService.recordJobStageExecution(stage, "failure", duration);
                     metricsService.incrementJobStageCounter(stage, "failure");
                     metricsService.recordJobError(stage, error.getClass().getSimpleName());
-                    
+
+                    // Record audit entry for operation failed
+                    if (auditService != null) {
+                        auditService.recordOperationFailed(request, error, duration.toMillis(), orchestratorType)
+                                .subscribe(); // Fire and forget
+                    }
+
+                    // Persist failure result
+                    if (resultService != null) {
+                        resultService.saveFailureResult(
+                                request,
+                                startTime,
+                                error.getMessage(),
+                                error.getClass().getSimpleName(),
+                                orchestratorType,
+                                getJobDefinition()
+                        ).subscribe(); // Fire and forget
+                    }
+
                     // Publish job failed event
                     if (eventPublisher != null) {
                         eventPublisher.publishJobFailed(executionId, request.getJobType(), error.getMessage(), error);
@@ -233,6 +299,36 @@ public abstract class AbstractResilientDataJobService implements DataJobService 
      */
     protected ResiliencyDecoratorService getResiliencyService() {
         return resiliencyService;
+    }
+
+    /**
+     * Gets the audit service for custom audit operations.
+     */
+    protected JobAuditService getAuditService() {
+        return auditService;
+    }
+
+    /**
+     * Gets the result service for custom result operations.
+     */
+    protected JobExecutionResultService getResultService() {
+        return resultService;
+    }
+
+    /**
+     * Gets the orchestrator type. Subclasses should override this method.
+     * Default implementation returns "UNKNOWN".
+     */
+    protected String getOrchestratorType() {
+        return "UNKNOWN";
+    }
+
+    /**
+     * Gets the job definition identifier. Subclasses should override this method.
+     * Default implementation returns null.
+     */
+    protected String getJobDefinition() {
+        return null;
     }
 }
 
