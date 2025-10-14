@@ -9,6 +9,7 @@ Complete API reference for `lib-common-data`.
 - [Model Classes](#model-classes)
 - [Orchestration Interfaces](#orchestration-interfaces)
 - [Mapper Interfaces](#mapper-interfaces)
+- [Utility Classes](#utility-classes)
 
 ---
 
@@ -361,7 +362,9 @@ public class JobStageRequest {
     private String executionId;
     private String requestId;
     private String initiator;
+    private Map<String, String> metadata;
     private String targetDtoClass;
+    private String mapperName;
 }
 ```
 
@@ -375,7 +378,9 @@ public class JobStageRequest {
 | `executionId` | `String` | For CHECK/COLLECT/RESULT | Job execution ID |
 | `requestId` | `String` | No | Request ID for tracing |
 | `initiator` | `String` | No | User/system initiating the request |
+| `metadata` | `Map<String, String>` | No | Additional metadata |
 | `targetDtoClass` | `String` | For RESULT | Fully qualified class name of target DTO |
+| `mapperName` | `String` | No | Specific mapper name to use (optional, auto-selected if not specified) |
 
 ---
 
@@ -392,12 +397,13 @@ public class JobStageResponse {
     private JobStage stage;
     private String executionId;
     private JobExecutionStatus status;
+    private boolean success;
+    private String message;
     private Integer progressPercentage;
     private Map<String, Object> data;
-    private Boolean success;
-    private String message;
     private String error;
     private Instant timestamp;
+    private Map<String, String> metadata;
 }
 ```
 
@@ -408,12 +414,13 @@ public class JobStageResponse {
 | `stage` | `JobStage` | The stage that was executed |
 | `executionId` | `String` | Unique job execution identifier |
 | `status` | `JobExecutionStatus` | Current job status |
+| `success` | `boolean` | Whether operation succeeded |
+| `message` | `String` | Human-readable message |
 | `progressPercentage` | `Integer` | Progress percentage (0-100) |
 | `data` | `Map<String, Object>` | Result data (raw or transformed) |
-| `success` | `Boolean` | Whether operation succeeded |
-| `message` | `String` | Human-readable message |
 | `error` | `String` | Error message if failed |
 | `timestamp` | `Instant` | Response timestamp |
+| `metadata` | `Map<String, String>` | Additional metadata |
 
 ---
 
@@ -616,10 +623,236 @@ CustomerDTO result = mapper.mapToTarget(rawData);
 
 ---
 
+## Utility Classes
+
+### TracingContextExtractor
+
+Utility class for extracting trace IDs and span IDs from Micrometer Observation.
+
+**Package:** `com.firefly.common.data.util`
+
+**Features:**
+- ✅ Real trace ID and span ID extraction from Micrometer Tracing
+- ✅ Support for Brave (Zipkin) and OpenTelemetry backends
+- ✅ Multiple extraction strategies with fallbacks
+- ✅ Automatic configuration via Spring Boot
+
+#### Methods
+
+##### setTracer
+
+```java
+public static void setTracer(Tracer tracerInstance)
+```
+
+Sets the tracer instance to use for extraction. This is automatically called by `ObservabilityAutoConfiguration`.
+
+**Parameters:**
+- `tracerInstance` - The Micrometer Tracer instance
+
+**Note:** This method is called automatically during Spring Boot startup. Manual invocation is rarely needed.
+
+##### extractTraceId
+
+```java
+public static String extractTraceId(Observation observation)
+```
+
+Extracts the trace ID from the current observation.
+
+**Parameters:**
+- `observation` - The Micrometer Observation
+
+**Returns:**
+- `String` - The trace ID (16-character hex for Brave), or `null` if not available
+
+**Example:**
+```java
+Observation observation = observationRegistry.getCurrentObservation();
+String traceId = TracingContextExtractor.extractTraceId(observation);
+// traceId = "59e63de2fc596870"
+```
+
+##### extractSpanId
+
+```java
+public static String extractSpanId(Observation observation)
+```
+
+Extracts the span ID from the current observation.
+
+**Parameters:**
+- `observation` - The Micrometer Observation
+
+**Returns:**
+- `String` - The span ID (16-character hex for Brave), or `null` if not available
+
+**Example:**
+```java
+Observation observation = observationRegistry.getCurrentObservation();
+String spanId = TracingContextExtractor.extractSpanId(observation);
+// spanId = "59e63de2fc596870"
+```
+
+##### hasTracingContext
+
+```java
+public static boolean hasTracingContext(Observation observation)
+```
+
+Checks if the observation has an active tracing context.
+
+**Parameters:**
+- `observation` - The Micrometer Observation
+
+**Returns:**
+- `boolean` - `true` if tracing context is available, `false` otherwise
+
+**Example:**
+```java
+if (TracingContextExtractor.hasTracingContext(observation)) {
+    String traceId = TracingContextExtractor.extractTraceId(observation);
+    // Use trace ID...
+}
+```
+
+---
+
+### DataSizeCalculator
+
+Utility class for calculating data sizes by JSON serialization.
+
+**Package:** `com.firefly.common.data.util`
+
+**Features:**
+- ✅ Precise byte size calculation via JSON serialization
+- ✅ UTF-8 encoding for accurate byte count
+- ✅ Support for complex objects and nested structures
+- ✅ Human-readable size formatting
+- ✅ Size validation utilities
+
+#### Methods
+
+##### calculateSize
+
+```java
+public static long calculateSize(Object data)
+```
+
+Calculates the size of a data object in bytes by serializing it to JSON.
+
+**Parameters:**
+- `data` - The object to measure
+
+**Returns:**
+- `long` - Size in bytes, or `0` if data is `null`
+
+**Example:**
+```java
+Map<String, Object> data = Map.of("key", "value", "count", 42);
+long size = DataSizeCalculator.calculateSize(data);
+// size = 27 bytes
+```
+
+##### calculateCombinedSize
+
+```java
+public static long calculateCombinedSize(Object... dataObjects)
+```
+
+Calculates the combined size of multiple data objects.
+
+**Parameters:**
+- `dataObjects` - Variable number of objects to measure
+
+**Returns:**
+- `long` - Total size in bytes
+
+**Example:**
+```java
+long totalSize = DataSizeCalculator.calculateCombinedSize(
+    rawOutput,
+    transformedOutput,
+    metadata
+);
+// totalSize = 1247 bytes
+```
+
+##### calculateMapSize
+
+```java
+public static long calculateMapSize(Map<?, ?> map)
+```
+
+Calculates the size of a Map by serializing it to JSON.
+
+**Parameters:**
+- `map` - The Map to measure
+
+**Returns:**
+- `long` - Size in bytes, or `0` if map is `null` or empty
+
+**Example:**
+```java
+Map<String, String> params = Map.of("param1", "value1", "param2", "value2");
+long size = DataSizeCalculator.calculateMapSize(params);
+```
+
+##### formatSize
+
+```java
+public static String formatSize(long bytes)
+```
+
+Formats a byte size into a human-readable string.
+
+**Parameters:**
+- `bytes` - Size in bytes
+
+**Returns:**
+- `String` - Formatted size (e.g., "1.2 KB", "3.5 MB")
+
+**Example:**
+```java
+String formatted = DataSizeCalculator.formatSize(1247);
+// formatted = "1.2 KB"
+
+String formatted2 = DataSizeCalculator.formatSize(5242880);
+// formatted2 = "5.0 MB"
+```
+
+##### exceedsSize
+
+```java
+public static boolean exceedsSize(Object data, long maxSizeBytes)
+```
+
+Checks if a data object exceeds a specified size limit.
+
+**Parameters:**
+- `data` - The object to check
+- `maxSizeBytes` - Maximum allowed size in bytes
+
+**Returns:**
+- `boolean` - `true` if data exceeds the limit, `false` otherwise
+
+**Example:**
+```java
+// Check if data exceeds 1MB
+boolean tooLarge = DataSizeCalculator.exceedsSize(myData, 1024 * 1024);
+if (tooLarge) {
+    throw new DataTooLargeException("Data exceeds 1MB limit");
+}
+```
+
+---
+
 ## See Also
 
 - [Getting Started](getting-started.md) - Setup guide
 - [Job Lifecycle](job-lifecycle.md) - Stage details
 - [Mappers](mappers.md) - Transformation patterns
 - [Examples](examples.md) - Usage examples
+- [Observability](observability.md) - Tracing and metrics
+- [Persistence](persistence.md) - Audit trail and result storage
 

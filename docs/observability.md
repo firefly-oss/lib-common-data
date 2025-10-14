@@ -98,6 +98,106 @@ Each trace includes:
 - **Low Cardinality Tags**:
   - `job.stage`: The job stage (START, CHECK, COLLECT, RESULT)
   - `execution.id`: Truncated execution ID
+
+### Real Trace ID and Span ID Extraction
+
+The library now includes **effective tracing context extraction** using the `TracingContextExtractor` utility:
+
+#### Features
+
+- ✅ **Real Trace IDs** - Extracted from Micrometer Tracing (not generated timestamps)
+- ✅ **Real Span IDs** - Extracted from current observation span
+- ✅ **Brave Support** - Full support for Brave tracing backend (Zipkin)
+- ✅ **OpenTelemetry Ready** - Prepared for OpenTelemetry backend
+- ✅ **Automatic Configuration** - Tracer is automatically injected via Spring Boot
+- ✅ **Multiple Extraction Strategies** - Tries tracer first, then observation context
+- ✅ **Distributed Tracing** - Full correlation with Zipkin, Jaeger, and other tracing systems
+
+#### How It Works
+
+The `TracingContextExtractor` is automatically configured in `ObservabilityAutoConfiguration`:
+
+```java
+@Bean
+public JobTracingService jobTracingService(ObservationRegistry observationRegistry,
+                                           JobOrchestrationProperties properties,
+                                           Optional<Tracer> tracer) {
+    // Configure the TracingContextExtractor with the tracer if available
+    tracer.ifPresent(t -> {
+        TracingContextExtractor.setTracer(t);
+        log.info("Configured TracingContextExtractor with Tracer: {}",
+                 t.getClass().getSimpleName());
+    });
+
+    return new JobTracingService(observationRegistry, properties);
+}
+```
+
+#### Usage in Services
+
+The extraction is used automatically in `JobAuditService` and `JobExecutionResultService`:
+
+```java
+// Extract real trace ID from current observation
+private String extractTraceId(io.micrometer.observation.Observation observation) {
+    String traceId = TracingContextExtractor.extractTraceId(observation);
+    if (traceId != null) {
+        log.trace("Extracted trace ID: {}", traceId);
+    } else {
+        log.trace("No trace ID available in observation context");
+    }
+    return traceId;
+}
+
+// Extract real span ID from current observation
+private String extractSpanId(io.micrometer.observation.Observation observation) {
+    String spanId = TracingContextExtractor.extractSpanId(observation);
+    if (spanId != null) {
+        log.trace("Extracted span ID: {}", spanId);
+    } else {
+        log.trace("No span ID available in observation context");
+    }
+    return spanId;
+}
+```
+
+#### Example Trace IDs
+
+**Before (Simplified):**
+```
+traceId: trace-1760466188449986
+spanId: span-1760466188449986
+```
+
+**After (Real Brave Tracing):**
+```
+traceId: 59e63de2fc596870  (16-character hex from Brave)
+spanId: 59e63de2fc596870   (16-character hex from Brave)
+```
+
+#### Manual Usage
+
+You can also use the `TracingContextExtractor` directly in your code:
+
+```java
+import com.firefly.common.data.util.TracingContextExtractor;
+
+// Extract from current observation
+Observation observation = observationRegistry.getCurrentObservation();
+String traceId = TracingContextExtractor.extractTraceId(observation);
+String spanId = TracingContextExtractor.extractSpanId(observation);
+
+// Check if tracing context is available
+boolean hasContext = TracingContextExtractor.hasTracingContext(observation);
+```
+
+#### Supported Tracing Backends
+
+| Backend | Status | Notes |
+|---------|--------|-------|
+| **Brave** (Zipkin) | ✅ Fully Supported | Default implementation, tested |
+| **OpenTelemetry** | 🔄 Prepared | Requires `micrometer-tracing-bridge-otel` dependency |
+| **Generic Micrometer** | ✅ Fallback | Uses generic `TraceContext` interface |
   - `orchestrator.type`: Type of orchestrator (AWS_STEP_FUNCTIONS, etc.)
 - **High Cardinality Tags**:
   - `execution.id.full`: Complete execution ID
@@ -113,48 +213,59 @@ The library automatically collects the following metrics:
 
 #### Job Stage Metrics
 
-- **`firefly.data.job.stage.execution`** (Timer)
+- **`<metric-prefix>.stage.execution`** (Timer)
+  - Default: `firefly.data.job.stage.execution`
   - Tags: `stage`, `status`, `orchestrator`
   - Measures execution time for each job stage
 
-- **`firefly.data.job.stage.count`** (Counter)
+- **`<metric-prefix>.stage.count`** (Counter)
+  - Default: `firefly.data.job.stage.count`
   - Tags: `stage`, `status`, `orchestrator`
   - Counts job stage executions
 
 #### Job Execution Metrics
 
-- **`firefly.data.job.execution.started`** (Counter)
+- **`<metric-prefix>.execution.started`** (Counter)
+  - Default: `firefly.data.job.execution.started`
   - Tags: `orchestrator`
   - Counts job executions started
 
-- **`firefly.data.job.execution.completed`** (Counter)
+- **`<metric-prefix>.execution.completed`** (Counter)
+  - Default: `firefly.data.job.execution.completed`
   - Tags: `status`, `orchestrator`
   - Counts job executions completed
 
-- **`firefly.data.job.execution.duration`** (Timer)
+- **`<metric-prefix>.execution.duration`** (Timer)
+  - Default: `firefly.data.job.execution.duration`
   - Tags: `status`, `orchestrator`
   - Measures total job execution time
 
 #### Error Metrics
 
-- **`firefly.data.job.error`** (Counter)
+- **`<metric-prefix>.error`** (Counter)
+  - Default: `firefly.data.job.error`
   - Tags: `stage`, `error.type`, `orchestrator`
   - Counts errors by stage and type
 
 #### Mapper Metrics
 
-- **`firefly.data.job.mapper.execution`** (Timer)
+- **`<metric-prefix>.mapper.execution`** (Timer)
+  - Default: `firefly.data.job.mapper.execution`
   - Tags: `mapper`, `status`
   - Measures mapper execution time
 
 #### Orchestrator Metrics
 
-- **`firefly.data.job.orchestrator.operation`** (Timer)
+- **`<metric-prefix>.orchestrator.operation`** (Timer)
+  - Default: `firefly.data.job.orchestrator.operation`
   - Tags: `operation`, `status`, `orchestrator`
   - Measures orchestrator operation time
 
-- **`firefly.data.job.active.count`** (Gauge)
+- **`<metric-prefix>.active.count`** (Gauge)
+  - Default: `firefly.data.job.active.count`
   - Current number of active jobs
+
+**Note:** The `<metric-prefix>` is configurable via `firefly.data.orchestration.observability.metric-prefix` (default: `firefly.data.job`).
 
 ### Custom Metrics
 
