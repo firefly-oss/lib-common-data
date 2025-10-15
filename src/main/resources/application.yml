@@ -1,0 +1,45 @@
+# Default configuration for lib-common-data
+# These settings can be overridden in your microservice's application.yml
+
+# Disable health checks for messaging systems that are not configured
+# This prevents errors when RabbitMQ, Kafka, etc. are not available
+management:
+  health:
+    rabbit:
+      enabled: false
+    kafka:
+      enabled: false
+    mongo:
+      enabled: false
+    redis:
+      enabled: false
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# Default logging configuration
+logging:
+  format: json  # Use "plain" for development/debugging
+  level:
+    com.firefly.common.data: INFO
+    com.firefly.common.eda: INFO
+    com.firefly.common.cqrs: INFO
+    com.firefly.transactional: INFO
+
+# Default firefly configuration
+firefly:
+  data:
+    eda:
+      enabled: true
+    cqrs:
+      enabled: true
+    orchestration:
+      enabled: true
+      observability:
+        tracing-enabled: true
+        metrics-enabled: true
+      health-check:
+        enabled: true
+    transactional:
+      enabled: false
+
