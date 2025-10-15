@@ -82,25 +82,39 @@ public interface DataJobService {
 
     /**
      * Retrieves final results, performs mapping/transformation, and cleanup.
-     * 
+     *
      * This method should:
      * 1. Retrieve the raw results (possibly by calling collectJobResults internally)
      * 2. Apply transformation using the configured mapper (MapStruct)
      * 3. Map raw data to target DTO specified in the request
      * 4. Clean up temporary resources
      * 5. Return the mapped/transformed final results
-     * 
+     *
      * This is the final stage where business logic transformation happens.
      * The response should contain the mapped DTO in the data map.
-     * 
+     *
      * @param request the result request containing execution ID and target DTO class info
      * @return a Mono emitting the response with transformed/mapped final results
      */
     Mono<JobStageResponse> getJobResult(JobStageRequest request);
 
     /**
+     * Stops a running job execution.
+     *
+     * This method should:
+     * - Request the orchestrator to stop the job execution
+     * - Clean up any resources associated with the job
+     * - Return confirmation of the stop operation
+     *
+     * @param request the stop request containing execution ID
+     * @param reason optional reason for stopping the job
+     * @return a Mono emitting the response with stop confirmation
+     */
+    Mono<JobStageResponse> stopJob(JobStageRequest request, String reason);
+
+    /**
      * Gets the job stage this service implementation is designed for.
-     * 
+     *
      * @return the job stage
      */
     default JobStage getSupportedStage() {

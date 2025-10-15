@@ -129,6 +129,15 @@ public abstract class AbstractResilientDataJobService implements DataJobService 
         );
     }
 
+    @Override
+    public final Mono<JobStageResponse> stopJob(JobStageRequest request, String reason) {
+        return executeWithObservabilityAndResiliency(
+                JobStage.STOP,
+                request,
+                () -> doStopJob(request, reason)
+        );
+    }
+
     /**
      * Executes an operation with full observability, resiliency, and persistence.
      */
@@ -281,6 +290,16 @@ public abstract class AbstractResilientDataJobService implements DataJobService 
     protected abstract Mono<JobStageResponse> doGetJobResult(JobStageRequest request);
 
     /**
+     * Implements the actual business logic for stopping a job.
+     * Subclasses must implement this method.
+     *
+     * @param request the stop request containing execution ID
+     * @param reason optional reason for stopping the job
+     * @return a Mono emitting the response with stop confirmation
+     */
+    protected abstract Mono<JobStageResponse> doStopJob(JobStageRequest request, String reason);
+
+    /**
      * Gets the tracing service for custom tracing operations.
      */
     protected JobTracingService getTracingService() {
@@ -329,6 +348,66 @@ public abstract class AbstractResilientDataJobService implements DataJobService 
      */
     protected String getJobDefinition() {
         return null;
+    }
+
+    /**
+     * Gets the job name for identification and logging purposes.
+     * Subclasses should override this method to provide a meaningful name.
+     * Default implementation returns the simple class name.
+     *
+     * @return the job name (e.g., "CustomerDataJob", "OrderDataJob")
+     */
+    protected String getJobName() {
+        return this.getClass().getSimpleName();
+    }
+
+    /**
+     * Gets a description of what this job does.
+     * Subclasses should override this method to provide a meaningful description.
+     * Default implementation returns a generic description.
+     *
+     * @return the job description
+     */
+    protected String getJobDescription() {
+        return "Data processing job";
+    }
+
+    /**
+     * Helper method to build a JobExecutionRequest from a JobStageRequest.
+     * This ensures all fields (requestId, initiator, metadata) are properly propagated
+     * from the HTTP request to the orchestrator.
+     *
+     * @param request the job stage request containing all context
+     * @param jobDefinition the job definition identifier (e.g., state machine ARN)
+     * @return a fully populated JobExecutionRequest
+     */
+    protected com.firefly.common.data.orchestration.model.JobExecutionRequest buildJobExecutionRequest(
+            JobStageRequest request,
+            String jobDefinition) {
+
+        return com.firefly.common.data.orchestration.model.JobExecutionRequest.builder()
+                .jobDefinition(jobDefinition)
+                .input(request.getParameters())
+                .requestId(request.getRequestId())
+                .initiator(request.getInitiator())
+                .metadata(request.getMetadata())
+                .traceHeader(buildTraceHeader(request.getRequestId()))
+                .build();
+    }
+
+    /**
+     * Builds a trace header from the request ID for distributed tracing.
+     * Subclasses can override this to customize trace header format.
+     *
+     * @param requestId the request ID
+     * @return the trace header, or null if requestId is null
+     */
+    protected String buildTraceHeader(String requestId) {
+        if (requestId == null) {
+            return null;
+        }
+        // Default format - subclasses can override for specific formats (e.g., AWS X-Ray)
+        return "Root=1-" + System.currentTimeMillis() / 1000 + "-" + requestId.replace("-", "");
     }
 }
 
