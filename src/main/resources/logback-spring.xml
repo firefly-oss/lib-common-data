@@ -1,21 +1,92 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
-    
-    <springProperty scope="context" name="applicationName" source="spring.application.name" defaultValue="lib-common-data"/>
-    
+    <!-- Get properties from Spring Boot -->
+    <springProperty scope="context" name="applicationName" source="spring.application.name" defaultValue="application"/>
+    <springProperty scope="context" name="profile" source="spring.profiles.active" defaultValue="default"/>
+    <property name="hostName" value="${HOSTNAME:-unknown}"/>
+    <property name="podName" value="${POD_NAME:-unknown}"/>
+
+    <!-- Stop logback from outputting its own status at startup -->
+    <statusListener class="ch.qos.logback.core.status.NopStatusListener" />
+
+    <!-- Console Appender -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [${applicationName}] %logger{36} - %msg%n</pattern>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <!-- Add application metadata -->
+            <customFields>{
+                "service": {
+                "name": "${applicationName}",
+                "environment": "${profile}",
+                "host": "${hostName}",
+                "instance": "${podName}"
+                }
+                }</customFields>
+
+            <!-- Configure timestamp format (ISO-8601) -->
+            <timestampPattern>yyyy-MM-dd'T'HH:mm:ss.SSSZZ</timestampPattern>
+
+            <!-- Include caller data (class name, method, etc.) -->
+            <includeCallerData>true</includeCallerData>
+
+            <!-- Configure field names with better structure -->
+            <fieldNames>
+                <timestamp>timestamp</timestamp>
+                <version>[ignore]</version>
+                <logger>logger</logger>
+                <thread>thread</thread>
+                <level>level</level>
+                <levelValue>[ignore]</levelValue>
+                <message>message</message>
+                <stackTrace>exception.stacktrace</stackTrace>
+                <mdc>context</mdc>
+            </fieldNames>
+
+            <!-- Providers for additional context -->
+            <provider class="net.logstash.logback.composite.loggingevent.LoggingEventPatternJsonProvider">
+                <pattern>
+                    {
+                    "location": {
+                    "class": "%C{0}",
+                    "method": "%M",
+                    "line": "%L",
+                    "file": "%F"
+                    }
+                    }
+                </pattern>
+            </provider>
+
+            <!-- Configure stack trace handling -->
+            <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                <maxDepthPerThrowable>30</maxDepthPerThrowable>
+                <maxLength>4096</maxLength>
+                <shortenedClassNameLength>20</shortenedClassNameLength>
+                <rootCauseFirst>true</rootCauseFirst>
+                <inlineHashMarker>|</inlineHashMarker>
+            </throwableConverter>
+
+            <!-- Pretty print for development environments only, single-line JSON for all others -->
+            <if condition='property("spring.profiles.active").contains("dev")'>
+                <then>
+                    <jsonGeneratorDecorator class="net.logstash.logback.decorate.PrettyPrintingJsonGeneratorDecorator"/>
+                </then>
+            </if>
+
+            <!-- Handle structured arguments -->
+            <provider class="net.logstash.logback.composite.loggingevent.ArgumentsJsonProvider"/>
         </encoder>
     </appender>
 
-    <logger name="com.firefly.common.data" level="INFO"/>
-    <logger name="com.firefly.common.eda" level="INFO"/>
-    <logger name="com.firefly.common.cqrs" level="INFO"/>
-    <logger name="com.firefly.transactional" level="INFO"/>
-    
-    <root level="INFO">
+    <!-- Async appender to improve performance -->
+    <appender name="ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <includeCallerData>true</includeCallerData>
+        <neverBlock>true</neverBlock>
         <appender-ref ref="CONSOLE"/>
+    </appender>
+
+    <!-- Root logger configuration -->
+    <root level="INFO">
+        <appender-ref ref="ASYNC"/>
     </root>
 </configuration>
