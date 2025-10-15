@@ -16,9 +16,17 @@
 
 package com.firefly.common.data.controller;
 
+import com.firefly.common.data.event.JobEventPublisher;
 import com.firefly.common.data.model.JobStage;
+import com.firefly.common.data.model.JobStartRequest;
 import com.firefly.common.data.model.JobStageRequest;
 import com.firefly.common.data.model.JobStageResponse;
+import com.firefly.common.data.observability.JobMetricsService;
+import com.firefly.common.data.observability.JobTracingService;
+import com.firefly.common.data.persistence.service.JobAuditService;
+import com.firefly.common.data.persistence.service.JobExecutionResultService;
+import com.firefly.common.data.resiliency.ResiliencyDecoratorService;
+import com.firefly.common.data.service.AbstractResilientDataJobService;
 import com.firefly.common.data.service.DataJobService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,6 +40,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
@@ -53,9 +62,10 @@ class AbstractDataJobControllerTest {
     @Test
     void shouldStartJobSuccessfully() {
         // Given
-        JobStageRequest request = JobStageRequest.builder()
-                .stage(JobStage.START)
+        JobStartRequest request = JobStartRequest.builder()
                 .parameters(Map.of("key", "value"))
+                .requestId("req-001")
+                .initiator("test-user")
                 .build();
 
         JobStageResponse expectedResponse = JobStageResponse.success(
@@ -161,8 +171,8 @@ class AbstractDataJobControllerTest {
     @Test
     void shouldHandleStartJobFailure() {
         // Given
-        JobStageRequest request = JobStageRequest.builder()
-                .stage(JobStage.START)
+        JobStartRequest request = JobStartRequest.builder()
+                .parameters(Map.of("key", "value"))
                 .build();
 
         JobStageResponse expectedResponse = JobStageResponse.failure(
@@ -187,8 +197,8 @@ class AbstractDataJobControllerTest {
     @Test
     void shouldHandleServiceError() {
         // Given
-        JobStageRequest request = JobStageRequest.builder()
-                .stage(JobStage.START)
+        JobStartRequest request = JobStartRequest.builder()
+                .parameters(Map.of("key", "value"))
                 .build();
 
         when(dataJobService.startJob(any(JobStageRequest.class)))
@@ -206,6 +216,66 @@ class AbstractDataJobControllerTest {
     static class TestDataJobController extends AbstractDataJobController {
         TestDataJobController(DataJobService dataJobService) {
             super(dataJobService);
+        }
+    }
+
+    /**
+     * Test implementation of AbstractResilientDataJobService with a custom job name.
+     */
+    static class TestResilientDataJobService extends AbstractResilientDataJobService {
+
+        public TestResilientDataJobService(JobTracingService tracingService,
+                                          JobMetricsService metricsService,
+                                          ResiliencyDecoratorService resiliencyService,
+                                          JobEventPublisher eventPublisher,
+                                          JobAuditService auditService,
+                                          JobExecutionResultService resultService) {
+            super(tracingService, metricsService, resiliencyService, eventPublisher, auditService, resultService);
+        }
+
+        @Override
+        protected Mono<JobStageResponse> doStartJob(JobStageRequest request) {
+            return Mono.just(JobStageResponse.success(JobStage.START, "exec-123", "Started"));
+        }
+
+        @Override
+        protected Mono<JobStageResponse> doCheckJob(JobStageRequest request) {
+            return Mono.just(JobStageResponse.success(JobStage.CHECK, request.getExecutionId(), "Running"));
+        }
+
+        @Override
+        protected Mono<JobStageResponse> doCollectJobResults(JobStageRequest request) {
+            return Mono.just(JobStageResponse.success(JobStage.COLLECT, request.getExecutionId(), "Collected"));
+        }
+
+        @Override
+        protected Mono<JobStageResponse> doGetJobResult(JobStageRequest request) {
+            return Mono.just(JobStageResponse.success(JobStage.RESULT, request.getExecutionId(), "Result"));
+        }
+
+        @Override
+        protected Mono<JobStageResponse> doStopJob(JobStageRequest request, String reason) {
+            return Mono.just(JobStageResponse.success(JobStage.STOP, request.getExecutionId(), "Stopped"));
+        }
+
+        @Override
+        protected String getJobName() {
+            return "CustomerDataJob";
+        }
+
+        @Override
+        protected String getJobDescription() {
+            return "Processes customer data";
+        }
+
+        @Override
+        protected String getOrchestratorType() {
+            return "TEST_ORCHESTRATOR";
+        }
+
+        @Override
+        protected String getJobDefinition() {
+            return "test-customer-job";
         }
     }
 }

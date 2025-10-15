@@ -142,10 +142,13 @@ class DataJobServiceIntegrationTest {
 
         @Override
         public Mono<JobStageResponse> startJob(JobStageRequest request) {
+            // Build JobExecutionRequest with all fields from JobStageRequest
             JobExecutionRequest execRequest = JobExecutionRequest.builder()
                     .jobDefinition(request.getJobType())
                     .executionName(request.getJobType() + "-" + System.currentTimeMillis())
                     .input(request.getParameters())
+                    .requestId(request.getRequestId())
+                    .initiator(request.getInitiator())
                     .metadata(request.getMetadata())
                     .build();
 
@@ -196,9 +199,9 @@ class DataJobServiceIntegrationTest {
                                     .orElseThrow(() -> new RuntimeException("Mapper not found"));
 
                             @SuppressWarnings("unchecked")
-                            JobResultMapper<Map<String, Object>, ?> typedMapper = 
+                            JobResultMapper<Map<String, Object>, ?> typedMapper =
                                     (JobResultMapper<Map<String, Object>, ?>) mapper;
-                            
+
                             Object mappedResult = typedMapper.mapToTarget(collectResponse.getData());
 
                             return Mono.just(JobStageResponse.builder()
@@ -217,6 +220,19 @@ class DataJobServiceIntegrationTest {
                             ));
                         }
                     });
+        }
+
+        @Override
+        public Mono<JobStageResponse> stopJob(JobStageRequest request, String reason) {
+            return orchestrator.stopJob(request.getExecutionId(), reason)
+                    .map(status -> JobStageResponse.builder()
+                            .stage(JobStage.STOP)
+                            .executionId(request.getExecutionId())
+                            .status(status)
+                            .success(true)
+                            .message("Job stopped: " + (reason != null ? reason : "No reason provided"))
+                            .timestamp(Instant.now())
+                            .build());
         }
     }
 

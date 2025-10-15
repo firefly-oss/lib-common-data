@@ -93,13 +93,15 @@ class JobStageRequestTest {
                 "system",
                 Map.of("env", "prod"),
                 "com.example.OrderDTO",
-                "OrderMapper"
+                "OrderMapper",
+                "User requested cancellation"  // reason field
         );
 
         // Then
         assertThat(request.getStage()).isEqualTo(JobStage.RESULT);
         assertThat(request.getExecutionId()).isEqualTo("exec-789");
         assertThat(request.getJobType()).isEqualTo("order-processing");
+        assertThat(request.getReason()).isEqualTo("User requested cancellation");
     }
 
     @Test

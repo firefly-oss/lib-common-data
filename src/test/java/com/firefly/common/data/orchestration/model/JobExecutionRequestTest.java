@@ -34,6 +34,9 @@ class JobExecutionRequestTest {
                 .jobDefinition("customer-data-extraction")
                 .executionName("customer-extraction-001")
                 .input(Map.of("customerId", "12345", "includeHistory", true))
+                .requestId("req-001")
+                .initiator("user@example.com")
+                .traceHeader("Root=1-67890-abcdef")
                 .metadata(Map.of("source", "api", "region", "us-east-1"))
                 .build();
 
@@ -42,6 +45,9 @@ class JobExecutionRequestTest {
         assertThat(request.getExecutionName()).isEqualTo("customer-extraction-001");
         assertThat(request.getInput()).containsEntry("customerId", "12345");
         assertThat(request.getInput()).containsEntry("includeHistory", true);
+        assertThat(request.getRequestId()).isEqualTo("req-001");
+        assertThat(request.getInitiator()).isEqualTo("user@example.com");
+        assertThat(request.getTraceHeader()).isEqualTo("Root=1-67890-abcdef");
         assertThat(request.getMetadata()).containsEntry("source", "api");
         assertThat(request.getMetadata()).containsEntry("region", "us-east-1");
     }
@@ -57,6 +63,9 @@ class JobExecutionRequestTest {
         assertThat(request.getJobDefinition()).isEqualTo("simple-job");
         assertThat(request.getExecutionName()).isNull();
         assertThat(request.getInput()).isNull();
+        assertThat(request.getRequestId()).isNull();
+        assertThat(request.getInitiator()).isNull();
+        assertThat(request.getTraceHeader()).isNull();
         assertThat(request.getMetadata()).isNull();
     }
 
