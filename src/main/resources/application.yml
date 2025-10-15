@@ -1,5 +1,4 @@
 # Firefly Common Data Library - Default Configuration
-
 firefly:
   data:
     eda:
@@ -14,7 +13,3 @@ firefly:
     enabled: true
     topic: data-processing-step-events
     include-job-context: true
-
-spring:
-  application:
-    name: ${spring.application.name:firefly-data-service}
