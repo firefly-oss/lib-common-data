@@ -138,7 +138,8 @@ public class JobTracingService {
             case CHECK -> properties.getObservability().isTraceJobCheck();
             case COLLECT -> properties.getObservability().isTraceJobCollect();
             case RESULT -> properties.getObservability().isTraceJobResult();
-            case ALL -> true;
+            case STOP -> true; // Always trace STOP operations
+            case ALL -> true; // Always trace START operations
         };
     }
 
