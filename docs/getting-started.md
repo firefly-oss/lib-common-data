@@ -110,8 +110,9 @@ firefly:
         - id: kafka-default
           bootstrap-servers: localhost:9092
 
-# Logging
+# Logging (JSON by default, use "plain" for development)
 logging:
+  format: json  # or "plain" for human-readable logs
   level:
     com.firefly: DEBUG
     reactor: INFO
@@ -290,7 +291,104 @@ public interface CustomerDataMapper extends JobResultMapper<Map<String, Object>,
 
 ### Step 4: Implement DataJobService
 
-Create your service implementation:
+> **💡 Recommended Approach**: Use `AbstractResilientDataJobService` for automatic observability, resiliency, and persistence features.
+>
+> See the [Multiple Jobs Example](multiple-jobs-example.md) for a complete example with multiple services and controllers.
+
+**Option A: Using AbstractResilientDataJobService (Recommended)**
+
+```java
+package com.example.myservice.service;
+
+import com.firefly.common.data.model.*;
+import com.firefly.common.data.observability.JobMetricsService;
+import com.firefly.common.data.observability.JobTracingService;
+import com.firefly.common.data.orchestration.model.*;
+import com.firefly.common.data.orchestration.port.JobOrchestrator;
+import com.firefly.common.data.resiliency.ResiliencyDecoratorService;
+import com.firefly.common.data.service.AbstractResilientDataJobService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
+
+@Service
+@Slf4j
+public class CustomerDataJobService extends AbstractResilientDataJobService {
+
+    private final JobOrchestrator jobOrchestrator;
+
+    public CustomerDataJobService(
+            JobTracingService tracingService,
+            JobMetricsService metricsService,
+            ResiliencyDecoratorService resiliencyService,
+            JobOrchestrator jobOrchestrator) {
+        super(tracingService, metricsService, resiliencyService);
+        this.jobOrchestrator = jobOrchestrator;
+    }
+
+    @Override
+    protected Mono<JobStageResponse> doStartJob(JobStageRequest request) {
+        log.debug("Starting customer data job with parameters: {}", request.getParameters());
+
+        JobExecutionRequest executionRequest = JobExecutionRequest.builder()
+            .jobDefinition("customer-data-extraction")
+            .input(request.getParameters())
+            .build();
+
+        return jobOrchestrator.startJob(executionRequest)
+            .map(execution -> JobStageResponse.success(
+                JobStage.START,
+                execution.getExecutionId(),
+                "Customer data job started successfully"
+            ));
+    }
+
+    @Override
+    protected Mono<JobStageResponse> doCheckJob(JobStageRequest request) {
+        return jobOrchestrator.checkJobStatus(request.getExecutionId())
+            .map(status -> JobStageResponse.success(
+                JobStage.CHECK,
+                request.getExecutionId(),
+                "Status: " + status
+            ));
+    }
+
+    @Override
+    protected Mono<JobStageResponse> doCollectJobResults(JobStageRequest request) {
+        return jobOrchestrator.getJobExecution(request.getExecutionId())
+            .map(execution -> JobStageResponse.builder()
+                .stage(JobStage.COLLECT)
+                .executionId(execution.getExecutionId())
+                .status(execution.getStatus())
+                .data(execution.getOutput())
+                .success(true)
+                .message("Customer data collected")
+                .build());
+    }
+
+    @Override
+    protected Mono<JobStageResponse> doGetJobResult(JobStageRequest request) {
+        // Implement result transformation logic here
+        return doCollectJobResults(request);
+    }
+
+    @Override
+    protected String getOrchestratorType() {
+        return jobOrchestrator.getOrchestratorType();
+    }
+
+    @Override
+    protected String getJobDefinition() {
+        return "customer-data-extraction";
+    }
+}
+```
+
+**Benefits**: Automatic tracing, metrics, circuit breaker, retry, rate limiting, bulkhead, audit trail, and comprehensive logging.
+
+**Option B: Implementing DataJobService Interface (Manual approach)**
+
+Only use this if you need full control and don't want the built-in features:
 
 ```java
 package com.example.myservice.service;
@@ -299,39 +397,31 @@ import com.firefly.common.data.model.*;
 import com.firefly.common.data.orchestration.model.*;
 import com.firefly.common.data.orchestration.port.JobOrchestrator;
 import com.firefly.common.data.service.DataJobService;
-import com.firefly.common.data.mapper.JobResultMapperRegistry;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
-import java.util.Map;
 
 @Service
 @Slf4j
 public class CustomerDataJobService implements DataJobService {
 
     private final JobOrchestrator jobOrchestrator;
-    private final JobResultMapperRegistry mapperRegistry;
-    
-    @Autowired
-    public CustomerDataJobService(
-            JobOrchestrator jobOrchestrator,
-            JobResultMapperRegistry mapperRegistry) {
+
+    public CustomerDataJobService(JobOrchestrator jobOrchestrator) {
         this.jobOrchestrator = jobOrchestrator;
-        this.mapperRegistry = mapperRegistry;
     }
 
     @Override
     public Mono<JobStageResponse> startJob(JobStageRequest request) {
         log.info("Starting customer data job with parameters: {}", request.getParameters());
-        
+
         JobExecutionRequest executionRequest = JobExecutionRequest.builder()
             .jobDefinition("customer-data-extraction")
             .input(request.getParameters())
             .build();
-            
+
         return jobOrchestrator.startJob(executionRequest)
             .map(execution -> JobStageResponse.builder()
                 .stage(JobStage.START)
@@ -423,7 +513,37 @@ public class CustomerDataJobService implements DataJobService {
 
 ### Step 5: Implement DataJobController
 
-Create your REST controller (or extend `AbstractDataJobController` for automatic logging):
+> **💡 Recommended Approach**: Use `AbstractDataJobController` for automatic comprehensive logging.
+
+**Option A: Using AbstractDataJobController (Recommended)**
+
+```java
+package com.example.myservice.controller;
+
+import com.firefly.common.data.controller.AbstractDataJobController;
+import com.firefly.common.data.service.DataJobService;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class CustomerDataJobController extends AbstractDataJobController {
+
+    public CustomerDataJobController(DataJobService dataJobService) {
+        super(dataJobService);
+    }
+
+    // That's it! All endpoints are implemented with automatic logging:
+    // POST   /api/v1/jobs/start
+    // GET    /api/v1/jobs/{executionId}/check
+    // GET    /api/v1/jobs/{executionId}/collect
+    // GET    /api/v1/jobs/{executionId}/result
+}
+```
+
+**Benefits**: Automatic logging of all HTTP requests/responses with parameters, execution details, errors, and timing.
+
+**Option B: Implementing DataJobController Interface (Manual approach)**
+
+Only use this if you need custom endpoint behavior:
 
 ```java
 package com.example.myservice.controller;
@@ -432,7 +552,6 @@ import com.firefly.common.data.controller.DataJobController;
 import com.firefly.common.data.model.*;
 import com.firefly.common.data.service.DataJobService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
@@ -441,8 +560,7 @@ import reactor.core.publisher.Mono;
 public class CustomerDataJobController implements DataJobController {
 
     private final DataJobService dataJobService;
-    
-    @Autowired
+
     public CustomerDataJobController(DataJobService dataJobService) {
         this.dataJobService = dataJobService;
     }
@@ -456,38 +574,38 @@ public class CustomerDataJobController implements DataJobController {
     @Override
     public Mono<JobStageResponse> checkJob(String executionId, String requestId) {
         log.info("Received check job request for execution: {}", executionId);
-        
+
         JobStageRequest request = JobStageRequest.builder()
             .stage(JobStage.CHECK)
             .executionId(executionId)
             .requestId(requestId)
             .build();
-            
+
         return dataJobService.checkJob(request);
     }
 
     @Override
     public Mono<JobStageResponse> collectJobResults(String executionId, String requestId) {
         log.info("Received collect results request for execution: {}", executionId);
-        
+
         JobStageRequest request = JobStageRequest.builder()
             .stage(JobStage.COLLECT)
             .executionId(executionId)
             .requestId(requestId)
             .build();
-            
+
         return dataJobService.collectJobResults(request);
     }
 
     @Override
-    public Mono<JobStageResponse> getJobResult(String executionId, String requestId) {
+    public Mono<JobStageResponse> getJobResult(String executionId, String requestId, String targetDtoClass) {
         log.info("Received get result request for execution: {}", executionId);
-        
+
         JobStageRequest request = JobStageRequest.builder()
             .stage(JobStage.RESULT)
             .executionId(executionId)
             .requestId(requestId)
-            .targetDtoClass("com.example.myservice.dto.CustomerDataDTO")
+            .targetDtoClass(targetDtoClass != null ? targetDtoClass : "com.example.myservice.dto.CustomerDataDTO")
             .build();
             
         return dataJobService.getJobResult(request);

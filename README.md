@@ -155,67 +155,73 @@ firefly:
     enabled: true
     topic: data-processing-step-events
     include-job-context: true
+
+# Logging configuration (JSON by default, use "plain" for development)
+logging:
+  format: json  # or "plain" for human-readable logs
+  level:
+    com.firefly: INFO
 ```
 
-### 2. Implement DataJobService
+### 2. Implement DataJobService (Recommended: Use AbstractResilientDataJobService)
 
-Create a service that implements the `DataJobService` interface:
+**Option A: Extend AbstractResilientDataJobService (Recommended)**
+
+This approach provides built-in observability, resiliency, persistence, and comprehensive logging:
 
 ```java
 @Service
 @Slf4j
-public class MyDataJobService implements DataJobService {
+public class MyDataJobService extends AbstractResilientDataJobService {
 
     private final JobOrchestrator jobOrchestrator;
-    
-    @Autowired
-    public MyDataJobService(JobOrchestrator jobOrchestrator) {
+
+    public MyDataJobService(
+            JobTracingService tracingService,
+            JobMetricsService metricsService,
+            ResiliencyDecoratorService resiliencyService,
+            JobOrchestrator jobOrchestrator) {
+        super(tracingService, metricsService, resiliencyService);
         this.jobOrchestrator = jobOrchestrator;
     }
 
     @Override
-    public Mono<JobStageResponse> startJob(JobStageRequest request) {
-        log.info("Starting job with parameters: {}", request.getParameters());
-        
+    protected Mono<JobStageResponse> doStartJob(JobStageRequest request) {
+        log.debug("Starting job with parameters: {}", request.getParameters());
+
         JobExecutionRequest executionRequest = JobExecutionRequest.builder()
             .jobDefinition("my-data-processing-workflow")
             .input(request.getParameters())
             .build();
-            
+
         return jobOrchestrator.startJob(executionRequest)
-            .map(execution -> JobStageResponse.builder()
-                .stage(JobStage.START)
-                .executionId(execution.getExecutionId())
-                .status(execution.getStatus())
-                .success(true)
-                .message("Job started successfully")
-                .timestamp(Instant.now())
-                .build());
+            .map(execution -> JobStageResponse.success(
+                JobStage.START,
+                execution.getExecutionId(),
+                "Job started successfully"
+            ));
     }
 
     @Override
-    public Mono<JobStageResponse> checkJob(JobStageRequest request) {
+    protected Mono<JobStageResponse> doCheckJob(JobStageRequest request) {
         return jobOrchestrator.checkJobStatus(request.getExecutionId())
-            .map(status -> JobStageResponse.builder()
-                .stage(JobStage.CHECK)
-                .executionId(request.getExecutionId())
-                .status(status)
-                .success(true)
-                .build());
+            .map(status -> JobStageResponse.success(
+                JobStage.CHECK,
+                request.getExecutionId(),
+                "Job status: " + status
+            ));
     }
 
     @Override
-    public Mono<JobStageResponse> collectJobResults(JobStageRequest request) {
-        // Collect RAW data from job execution (no transformation)
+    protected Mono<JobStageResponse> doCollectJobResults(JobStageRequest request) {
         return jobOrchestrator.getJobExecution(request.getExecutionId())
             .map(execution -> {
                 Map<String, Object> rawData = execution.getOutput();
-                
                 return JobStageResponse.builder()
                     .stage(JobStage.COLLECT)
                     .executionId(execution.getExecutionId())
                     .status(execution.getStatus())
-                    .data(rawData)  // Raw, unprocessed data
+                    .data(rawData)
                     .success(true)
                     .message("Raw results collected successfully")
                     .timestamp(Instant.now())
@@ -224,46 +230,73 @@ public class MyDataJobService implements DataJobService {
     }
 
     @Override
-    public Mono<JobStageResponse> getJobResult(JobStageRequest request) {
-        // Get raw data first, then apply MapStruct transformation
-        return collectJobResults(request)
-            .flatMap(collectResponse -> {
-                try {
-                    // Load target DTO class
-                    Class<?> targetClass = Class.forName(request.getTargetDtoClass());
-                    
-                    // Get appropriate mapper from registry
-                    JobResultMapper mapper = mapperRegistry.getMapper(targetClass)
-                        .orElseThrow(() -> new MapperNotFoundException(targetClass));
-                    
-                    // Extract raw data
-                    Map<String, Object> rawData = collectResponse.getData();
-                    
-                    // Transform raw data to target DTO using MapStruct
-                    Object mappedResult = mapper.mapToTarget(rawData);
-                    
-                    return Mono.just(JobStageResponse.builder()
-                        .stage(JobStage.RESULT)
-                        .executionId(request.getExecutionId())
-                        .status(collectResponse.getStatus())
-                        .data(Map.of("result", mappedResult))  // Transformed DTO
-                        .success(true)
-                        .message("Results transformed successfully")
-                        .timestamp(Instant.now())
-                        .build());
-                        
-                } catch (ClassNotFoundException e) {
-                    return Mono.error(new IllegalArgumentException(
-                        "Target DTO class not found: " + request.getTargetDtoClass(), e));
-                }
-            });
+    protected Mono<JobStageResponse> doGetJobResult(JobStageRequest request) {
+        // Implement result transformation logic here
+        return doCollectJobResults(request);
+    }
+
+    @Override
+    protected String getOrchestratorType() {
+        return jobOrchestrator.getOrchestratorType();
+    }
+
+    @Override
+    protected String getJobDefinition() {
+        return "my-data-processing-workflow";
     }
 }
 ```
 
-### 3. Implement DataJobController
+**Benefits of using AbstractResilientDataJobService:**
+- ✅ Automatic distributed tracing with Micrometer
+- ✅ Metrics collection (execution time, success/failure rates, data sizes)
+- ✅ Circuit breaker, retry, rate limiting, and bulkhead patterns
+- ✅ Audit trail persistence
+- ✅ Execution result persistence with caching
+- ✅ Comprehensive logging for all lifecycle phases
+- ✅ Event publishing for job lifecycle events
 
-Create a REST controller that implements the `DataJobController` interface:
+**Option B: Implement DataJobService Interface (Manual approach)**
+
+Only use this if you need full control and don't want the built-in features:
+
+```java
+@Service
+@Slf4j
+public class MyDataJobService implements DataJobService {
+    // Implementation similar to Option A but without automatic features
+    // See full example in docs/examples.md
+}
+```
+
+### 3. Implement DataJobController (Recommended: Use AbstractDataJobController)
+
+**Option A: Extend AbstractDataJobController (Recommended)**
+
+This approach provides automatic comprehensive logging for all HTTP requests/responses:
+
+```java
+@RestController
+public class MyDataJobController extends AbstractDataJobController {
+
+    public MyDataJobController(DataJobService dataJobService) {
+        super(dataJobService);
+    }
+
+    // That's it! All endpoints are implemented with automatic logging
+}
+```
+
+**Benefits of using AbstractDataJobController:**
+- ✅ Automatic logging of all HTTP requests with parameters
+- ✅ Automatic logging of successful responses with execution details
+- ✅ Automatic logging of error responses with error details
+- ✅ Request/response timing information
+- ✅ All standard endpoints already implemented
+
+**Option B: Implement DataJobController Interface (Manual approach)**
+
+Only use this if you need custom endpoint behavior:
 
 ```java
 @RestController
@@ -271,19 +304,20 @@ Create a REST controller that implements the `DataJobController` interface:
 public class MyDataJobController implements DataJobController {
 
     private final DataJobService dataJobService;
-    
-    @Autowired
+
     public MyDataJobController(DataJobService dataJobService) {
         this.dataJobService = dataJobService;
     }
 
     @Override
     public Mono<JobStageResponse> startJob(JobStageRequest request) {
+        log.info("Starting job: {}", request);
         return dataJobService.startJob(request);
     }
 
     @Override
     public Mono<JobStageResponse> checkJob(String executionId, String requestId) {
+        log.info("Checking job: {}", executionId);
         JobStageRequest request = JobStageRequest.builder()
             .stage(JobStage.CHECK)
             .executionId(executionId)
@@ -294,6 +328,7 @@ public class MyDataJobController implements DataJobController {
 
     @Override
     public Mono<JobStageResponse> collectJobResults(String executionId, String requestId) {
+        log.info("Collecting results: {}", executionId);
         JobStageRequest request = JobStageRequest.builder()
             .stage(JobStage.COLLECT)
             .executionId(executionId)
@@ -303,11 +338,13 @@ public class MyDataJobController implements DataJobController {
     }
 
     @Override
-    public Mono<JobStageResponse> getJobResult(String executionId, String requestId) {
+    public Mono<JobStageResponse> getJobResult(String executionId, String requestId, String targetDtoClass) {
+        log.info("Getting result: {}", executionId);
         JobStageRequest request = JobStageRequest.builder()
             .stage(JobStage.RESULT)
             .executionId(executionId)
             .requestId(requestId)
+            .targetDtoClass(targetDtoClass)
             .build();
         return dataJobService.getJobResult(request);
     }
@@ -822,10 +859,18 @@ For detailed documentation, see the [`docs/`](docs/) directory:
 ### Reference
 - **[API Reference](docs/api-reference.md)** - Complete API documentation
 - **[Examples](docs/examples.md)** - Real-world usage patterns and scenarios
+- **[Multiple Jobs Example](docs/multiple-jobs-example.md)** - ⭐ **Complete microservice with multiple controllers and data jobs**
 - **[Testing Guide](docs/testing.md)** - Testing strategies and examples
 
 ### Additional Resources
 - **[Documentation Cleanup Summary](DOCUMENTATION_CLEANUP_SUMMARY.md)** - Details on documentation accuracy and what's provided vs what must be implemented
+
+### Quick Links for Common Tasks
+
+- **Want to create a microservice with multiple data jobs?** → See [Multiple Jobs Example](docs/multiple-jobs-example.md)
+- **Need to understand the abstract base classes?** → See sections 2 and 3 in [Quick Start](#quick-start)
+- **Want JSON logging?** → It's enabled by default! See [Logging](docs/logging.md) for configuration
+- **Need to add observability?** → Use `AbstractResilientDataJobService` - it's automatic!
 
 ## Contributing
 
