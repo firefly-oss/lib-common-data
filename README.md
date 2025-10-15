@@ -843,9 +843,19 @@ class DataJobServiceTest {
 
 For detailed documentation, see the [`docs/`](docs/) directory:
 
+### 🚀 Quick Start
+- **[Step-by-Step Guide](docs/step-by-step-guide.md)** - **NEW!** Complete guide to building a microservice from scratch
+  - Project setup and dependencies
+  - Configuration (dev vs prod)
+  - Creating job orchestrators (MOCK, AWS Step Functions, multiple orchestrators)
+  - Creating multiple data job services
+  - Creating multiple controllers
+  - Testing and troubleshooting
+- **[Multiple Jobs Example](docs/multiple-jobs-example.md)** - Real-world example with 3 different job types
+
 ### Core Documentation
 - **[Architecture](docs/architecture.md)** - Deep dive into hexagonal architecture and design patterns
-- **[Getting Started](docs/getting-started.md)** - Step-by-step guide with complete examples
+- **[Getting Started](docs/getting-started.md)** - Basic guide with complete examples
 - **[Configuration](docs/configuration.md)** - Comprehensive configuration reference
 - **[Job Lifecycle](docs/job-lifecycle.md)** - Detailed explanation of job stages and data flow
 
