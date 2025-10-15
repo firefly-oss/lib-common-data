@@ -1380,14 +1380,14 @@ public class RealtimeDataJobService extends AbstractResilientDataJobService {
 
 You now have a complete microservice with:
 
-✅ **Multiple Job Orchestrators** - MOCK for dev, AWS Step Functions for prod, plus batch and realtime
-✅ **Multiple Data Job Services** - Customer, Order, Analytics services
-✅ **Multiple Controllers** - Each with automatic endpoints and logging
-✅ **Automatic Features** - Tracing, metrics, circuit breaker, retry, rate limiting, bulkhead
-✅ **JSON Logging** - Structured logs by default
-✅ **Health Checks** - Orchestrator health monitoring
-✅ **Reactive Stack** - Netty + WebFlux for non-blocking I/O
-✅ **Tests** - Unit and integration tests
+- ✅ **Multiple Job Orchestrators** - MOCK for dev, AWS Step Functions for prod, plus batch and realtime
+- ✅ **Multiple Data Job Services** - Customer, Order, Analytics services
+- ✅ **Multiple Controllers** - Each with automatic endpoints and logging
+- ✅ **Automatic Features** - Tracing, metrics, circuit breaker, retry, rate limiting, bulkhead
+- ✅ **JSON Logging** - Structured logs by default
+- ✅ **Health Checks** - Orchestrator health monitoring
+- ✅ **Reactive Stack** - Netty + WebFlux for non-blocking I/O
+- ✅ **Tests** - Unit and integration tests
 
 ### Next Steps
 
