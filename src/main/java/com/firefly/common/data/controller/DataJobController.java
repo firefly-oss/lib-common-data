@@ -16,7 +16,7 @@
 
 package com.firefly.common.data.controller;
 
-import com.firefly.common.data.model.JobStageRequest;
+import com.firefly.common.data.model.JobStartRequest;
 import com.firefly.common.data.model.JobStageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -30,28 +30,42 @@ import jakarta.validation.Valid;
 
 /**
  * Controller interface that core-data microservices should implement for job stage endpoints.
- * 
+ *
  * This interface defines the standard REST API endpoints for managing data processing jobs:
  * - POST /jobs/start: Start a new job
  * - GET /jobs/{executionId}/check: Check job status
  * - GET /jobs/{executionId}/collect: Collect job results
  * - GET /jobs/{executionId}/result: Get final results
- * 
+ * - POST /jobs/{executionId}/stop: Stop a running job
+ *
  * Implementations should delegate to the DataJobService for business logic.
+ *
+ * IMPORTANT: Implementations MUST add their own @Tag annotation to specify the Swagger tag.
+ * Example:
+ * <pre>
+ * {@code
+ * @RestController
+ * @Tag(name = "Data Job - CustomerData", description = "Customer data processing job management endpoints")
+ * public class CustomerDataJobController extends AbstractDataJobController {
+ *     // ...
+ * }
+ * }
+ * </pre>
  */
-@Tag(name = "Data Jobs", description = "Data processing job management endpoints")
 @RequestMapping("/api/v1/jobs")
+
 public interface DataJobController {
 
     /**
      * Starts a new data processing job.
-     * 
-     * @param request the job start request
+     *
+     * @param request the job start request containing parameters and metadata
      * @return a Mono emitting the response with execution details
      */
     @Operation(
         summary = "Start a new data processing job",
-        description = "Initiates a new data processing job with the provided parameters"
+        description = "Initiates a new data processing job with the provided parameters. " +
+                     "The job type and stage are determined by the endpoint and service implementation."
     )
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "Job started successfully"),
@@ -60,7 +74,7 @@ public interface DataJobController {
     })
     @PostMapping("/start")
     Mono<JobStageResponse> startJob(
-        @Valid @RequestBody JobStageRequest request
+        @Valid @RequestBody JobStartRequest request
     );
 
     /**
@@ -133,11 +147,40 @@ public interface DataJobController {
     Mono<JobStageResponse> getJobResult(
         @Parameter(description = "The job execution ID", required = true)
         @PathVariable String executionId,
-        
+
         @Parameter(description = "Optional request ID for tracing")
         @RequestParam(required = false) String requestId,
-        
+
         @Parameter(description = "Target DTO class for result mapping")
         @RequestParam(required = false) String targetDtoClass
+    );
+
+    /**
+     * Stops a running job execution.
+     *
+     * @param executionId the execution ID
+     * @param requestId optional request ID for tracing
+     * @param reason optional reason for stopping the job
+     * @return a Mono emitting the response with stop confirmation
+     */
+    @Operation(
+        summary = "Stop a running job",
+        description = "Stops a running job execution. The job will be terminated and cannot be resumed."
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Job stopped successfully"),
+        @ApiResponse(responseCode = "404", description = "Job execution not found"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
+    @PostMapping("/{executionId}/stop")
+    Mono<JobStageResponse> stopJob(
+        @Parameter(description = "The job execution ID", required = true)
+        @PathVariable String executionId,
+
+        @Parameter(description = "Optional request ID for tracing")
+        @RequestParam(required = false) String requestId,
+
+        @Parameter(description = "Optional reason for stopping the job")
+        @RequestParam(required = false) String reason
     );
 }

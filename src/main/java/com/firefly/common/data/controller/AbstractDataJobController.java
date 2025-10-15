@@ -17,24 +17,30 @@
 package com.firefly.common.data.controller;
 
 import com.firefly.common.data.model.JobStage;
+import com.firefly.common.data.model.JobStartRequest;
 import com.firefly.common.data.model.JobStageRequest;
 import com.firefly.common.data.model.JobStageResponse;
+import com.firefly.common.data.service.AbstractResilientDataJobService;
 import com.firefly.common.data.service.DataJobService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
+import java.lang.reflect.Method;
+
 /**
  * Abstract base controller implementation that provides comprehensive logging
  * for all job lifecycle phases.
- * 
+ *
  * This class logs:
  * - Incoming HTTP requests with parameters
  * - Successful responses with execution details
  * - Error responses with error details
  * - Request/response timing
- * 
+ *
  * Subclasses should inject the DataJobService implementation.
+ *
  */
 @Slf4j
 @RestController
@@ -47,18 +53,29 @@ public abstract class AbstractDataJobController implements DataJobController {
     }
 
     @Override
-    public Mono<JobStageResponse> startJob(JobStageRequest request) {
-        log.info("Received START job request - parameters: {}", 
-                request.getParameters() != null ? request.getParameters().keySet() : "none");
+    public Mono<JobStageResponse> startJob(JobStartRequest request) {
+        log.info("Received START job request - parameters: {}, requestId: {}, initiator: {}",
+                request.getParameters() != null ? request.getParameters().keySet() : "none",
+                request.getRequestId(),
+                request.getInitiator());
         log.debug("Full START job request: {}", request);
 
-        return dataJobService.startJob(request)
+        // Convert JobStartRequest to JobStageRequest for the service layer
+        JobStageRequest stageRequest = JobStageRequest.builder()
+                .stage(JobStage.START)
+                .parameters(request.getParameters())
+                .requestId(request.getRequestId())
+                .initiator(request.getInitiator())
+                .metadata(request.getMetadata())
+                .build();
+
+        return dataJobService.startJob(stageRequest)
                 .doOnSuccess(response -> {
                     if (response.isSuccess()) {
-                        log.info("START job completed successfully - executionId: {}, status: {}", 
+                        log.info("START job completed successfully - executionId: {}, status: {}",
                                 response.getExecutionId(), response.getStatus());
                     } else {
-                        log.warn("START job completed with failure - executionId: {}, status: {}, message: {}", 
+                        log.warn("START job completed with failure - executionId: {}, status: {}, message: {}",
                                 response.getExecutionId(), response.getStatus(), response.getMessage());
                     }
                     log.debug("Full START job response: {}", response);
@@ -125,7 +142,7 @@ public abstract class AbstractDataJobController implements DataJobController {
 
     @Override
     public Mono<JobStageResponse> getJobResult(String executionId, String requestId, String targetDtoClass) {
-        log.info("Received GET job result request - executionId: {}, requestId: {}, targetDtoClass: {}", 
+        log.info("Received GET job result request - executionId: {}, requestId: {}, targetDtoClass: {}",
                 executionId, requestId, targetDtoClass);
 
         JobStageRequest request = JobStageRequest.builder()
@@ -138,17 +155,46 @@ public abstract class AbstractDataJobController implements DataJobController {
         return dataJobService.getJobResult(request)
                 .doOnSuccess(response -> {
                     if (response.isSuccess()) {
-                        log.info("GET job result completed successfully - executionId: {}, status: {}, dataKeys: {}", 
-                                executionId, response.getStatus(), 
+                        log.info("GET job result completed successfully - executionId: {}, status: {}, dataKeys: {}",
+                                executionId, response.getStatus(),
                                 response.getData() != null ? response.getData().keySet() : "none");
                     } else {
-                        log.warn("GET job result completed with failure - executionId: {}, status: {}, message: {}", 
+                        log.warn("GET job result completed with failure - executionId: {}, status: {}, message: {}",
                                 executionId, response.getStatus(), response.getMessage());
                     }
                     log.debug("Full GET job result response for executionId {}: {}", executionId, response);
                 })
                 .doOnError(error -> {
-                    log.error("GET job result failed for executionId {} with error: {}", 
+                    log.error("GET job result failed for executionId {} with error: {}",
+                            executionId, error.getMessage(), error);
+                });
+    }
+
+    @Override
+    public Mono<JobStageResponse> stopJob(String executionId, String requestId, String reason) {
+        log.info("Received STOP job request - executionId: {}, requestId: {}, reason: {}",
+                executionId, requestId, reason);
+
+        JobStageRequest request = JobStageRequest.builder()
+                .stage(JobStage.STOP)
+                .executionId(executionId)
+                .requestId(requestId)
+                .reason(reason)
+                .build();
+
+        return dataJobService.stopJob(request, reason)
+                .doOnSuccess(response -> {
+                    if (response.isSuccess()) {
+                        log.info("STOP job completed successfully - executionId: {}, status: {}",
+                                executionId, response.getStatus());
+                    } else {
+                        log.warn("STOP job completed with failure - executionId: {}, status: {}, message: {}",
+                                executionId, response.getStatus(), response.getMessage());
+                    }
+                    log.debug("Full STOP job response for executionId {}: {}", executionId, response);
+                })
+                .doOnError(error -> {
+                    log.error("STOP job failed for executionId {} with error: {}",
                             executionId, error.getMessage(), error);
                 });
     }
