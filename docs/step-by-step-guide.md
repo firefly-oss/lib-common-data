@@ -402,12 +402,37 @@ public class MockJobOrchestrator implements JobOrchestrator {
 
     private Map<String, Object> generateMockOutput(String jobDefinition) {
         // Generate mock data based on job type
-        return Map.of(
-            "jobDefinition", jobDefinition,
-            "status", "completed",
-            "timestamp", Instant.now().toString(),
-            "mockData", "This is mock output for " + jobDefinition
-        );
+        // In a real implementation, this would come from the actual workflow execution
+        return switch (jobDefinition) {
+            case "customer-data-extraction" -> Map.of(
+                "customer_id", "CUST-12345",
+                "first_name", "John",
+                "last_name", "Doe",
+                "email_address", "john.doe@example.com",
+                "phone", "+1-555-0100",
+                "mailing_address", "123 Main St, Springfield, IL 62701"
+            );
+            case "order-data-extraction" -> Map.of(
+                "order_id", "ORD-98765",
+                "customer_id", "CUST-12345",
+                "order_date", Instant.now().toString(),
+                "total_amount", 299.99,
+                "status", "completed"
+            );
+            case "analytics-data-extraction" -> Map.of(
+                "customer_id", "CUST-12345",
+                "lifetime_value", 5432.10,
+                "total_orders", 42,
+                "average_order_value", 129.34,
+                "last_order_date", Instant.now().toString()
+            );
+            default -> Map.of(
+                "jobDefinition", jobDefinition,
+                "status", "completed",
+                "timestamp", Instant.now().toString(),
+                "message", "Mock output for " + jobDefinition
+            );
+        };
     }
 }
 ```
@@ -663,10 +688,11 @@ public class CustomerDataJobService extends AbstractResilientDataJobService {
     protected Mono<JobStageResponse> doStartJob(JobStageRequest request) {
         log.debug("Starting customer data extraction");
 
-        JobExecutionRequest executionRequest = JobExecutionRequest.builder()
-            .jobDefinition("customer-data-extraction")
-            .input(request.getParameters())
-            .build();
+        // Use helper method to build JobExecutionRequest with all fields
+        JobExecutionRequest executionRequest = buildJobExecutionRequest(
+            request,
+            "customer-data-extraction"
+        );
 
         return jobOrchestrator.startJob(executionRequest)
             .map(execution -> JobStageResponse.success(
@@ -755,10 +781,11 @@ public class OrderDataJobService extends AbstractResilientDataJobService {
     protected Mono<JobStageResponse> doStartJob(JobStageRequest request) {
         log.debug("Starting order data extraction");
 
-        JobExecutionRequest executionRequest = JobExecutionRequest.builder()
-            .jobDefinition("order-data-extraction")
-            .input(request.getParameters())
-            .build();
+        // Use helper method to build JobExecutionRequest with all fields
+        JobExecutionRequest executionRequest = buildJobExecutionRequest(
+            request,
+            "order-data-extraction"
+        );
 
         return jobOrchestrator.startJob(executionRequest)
             .map(execution -> JobStageResponse.success(
@@ -843,10 +870,11 @@ public class AnalyticsDataJobService extends AbstractResilientDataJobService {
     protected Mono<JobStageResponse> doStartJob(JobStageRequest request) {
         log.debug("Starting analytics data extraction");
 
-        JobExecutionRequest executionRequest = JobExecutionRequest.builder()
-            .jobDefinition("analytics-data-extraction")
-            .input(request.getParameters())
-            .build();
+        // Use helper method to build JobExecutionRequest with all fields
+        JobExecutionRequest executionRequest = buildJobExecutionRequest(
+            request,
+            "analytics-data-extraction"
+        );
 
         return jobOrchestrator.startJob(executionRequest)
             .map(execution -> JobStageResponse.success(

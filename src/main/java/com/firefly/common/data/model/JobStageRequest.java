@@ -81,11 +81,20 @@ public class JobStageRequest {
 
     /**
      * The name of the specific mapper to use for transformation.
-     * 
+     *
      * If not specified, the mapper will be auto-selected based on targetDtoClass.
      * This is useful when multiple mappers exist for the same target type.
-     * 
+     *
      * Example: "CustomerDataMapperV2"
      */
     private String mapperName;
+
+    /**
+     * Reason for stopping a job (used in STOP stage).
+     *
+     * This field is optional and provides context for why a job was stopped.
+     *
+     * Example: "User requested cancellation", "Timeout exceeded"
+     */
+    private String reason;
 }

@@ -330,10 +330,11 @@ public class CustomerDataJobService extends AbstractResilientDataJobService {
     protected Mono<JobStageResponse> doStartJob(JobStageRequest request) {
         log.debug("Starting customer data job with parameters: {}", request.getParameters());
 
-        JobExecutionRequest executionRequest = JobExecutionRequest.builder()
-            .jobDefinition("customer-data-extraction")
-            .input(request.getParameters())
-            .build();
+        // Use helper method to build JobExecutionRequest with all fields
+        JobExecutionRequest executionRequest = buildJobExecutionRequest(
+            request,
+            "customer-data-extraction"
+        );
 
         return jobOrchestrator.startJob(executionRequest)
             .map(execution -> JobStageResponse.success(
@@ -417,9 +418,13 @@ public class CustomerDataJobService implements DataJobService {
     public Mono<JobStageResponse> startJob(JobStageRequest request) {
         log.info("Starting customer data job with parameters: {}", request.getParameters());
 
+        // Build JobExecutionRequest with all fields from the request
         JobExecutionRequest executionRequest = JobExecutionRequest.builder()
             .jobDefinition("customer-data-extraction")
             .input(request.getParameters())
+            .requestId(request.getRequestId())
+            .initiator(request.getInitiator())
+            .metadata(request.getMetadata())
             .build();
 
         return jobOrchestrator.startJob(executionRequest)
@@ -541,74 +546,24 @@ public class CustomerDataJobController extends AbstractDataJobController {
 
 **Benefits**: Automatic logging of all HTTP requests/responses with parameters, execution details, errors, and timing.
 
-**Option B: Implementing DataJobController Interface (Manual approach)**
+**Option B: Extending AbstractDataJobController (Recommended)**
 
-Only use this if you need custom endpoint behavior:
+This is the simplest approach with built-in logging:
 
 ```java
 package com.example.myservice.controller;
 
-import com.firefly.common.data.controller.DataJobController;
-import com.firefly.common.data.model.*;
+import com.firefly.common.data.controller.AbstractDataJobController;
 import com.firefly.common.data.service.DataJobService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.RestController;
-import reactor.core.publisher.Mono;
 
 @RestController
 @Slf4j
-public class CustomerDataJobController implements DataJobController {
-
-    private final DataJobService dataJobService;
+public class CustomerDataJobController extends AbstractDataJobController {
 
     public CustomerDataJobController(DataJobService dataJobService) {
-        this.dataJobService = dataJobService;
-    }
-
-    @Override
-    public Mono<JobStageResponse> startJob(JobStageRequest request) {
-        log.info("Received start job request: {}", request);
-        return dataJobService.startJob(request);
-    }
-
-    @Override
-    public Mono<JobStageResponse> checkJob(String executionId, String requestId) {
-        log.info("Received check job request for execution: {}", executionId);
-
-        JobStageRequest request = JobStageRequest.builder()
-            .stage(JobStage.CHECK)
-            .executionId(executionId)
-            .requestId(requestId)
-            .build();
-
-        return dataJobService.checkJob(request);
-    }
-
-    @Override
-    public Mono<JobStageResponse> collectJobResults(String executionId, String requestId) {
-        log.info("Received collect results request for execution: {}", executionId);
-
-        JobStageRequest request = JobStageRequest.builder()
-            .stage(JobStage.COLLECT)
-            .executionId(executionId)
-            .requestId(requestId)
-            .build();
-
-        return dataJobService.collectJobResults(request);
-    }
-
-    @Override
-    public Mono<JobStageResponse> getJobResult(String executionId, String requestId, String targetDtoClass) {
-        log.info("Received get result request for execution: {}", executionId);
-
-        JobStageRequest request = JobStageRequest.builder()
-            .stage(JobStage.RESULT)
-            .executionId(executionId)
-            .requestId(requestId)
-            .targetDtoClass(targetDtoClass != null ? targetDtoClass : "com.example.myservice.dto.CustomerDataDTO")
-            .build();
-            
-        return dataJobService.getJobResult(request);
+        super(dataJobService);
     }
 }
 ```
@@ -678,8 +633,6 @@ mvn spring-boot:run
 curl -X POST http://localhost:8080/api/v1/jobs/start \
   -H "Content-Type: application/json" \
   -d '{
-    "stage": "START",
-    "jobType": "customer-data",
     "parameters": {
       "customerId": "12345",
       "includeHistory": true
@@ -704,19 +657,19 @@ Response:
 #### Check Job Status
 
 ```bash
-curl http://localhost:8080/api/v1/jobs/exec-abc123/check
+curl http://localhost:8080/api/v1/jobs/exec-abc123/check?requestId=req-001
 ```
 
 #### Collect Raw Results
 
 ```bash
-curl http://localhost:8080/api/v1/jobs/exec-abc123/collect
+curl http://localhost:8080/api/v1/jobs/exec-abc123/collect?requestId=req-001
 ```
 
 #### Get Final Results (Mapped)
 
 ```bash
-curl http://localhost:8080/api/v1/jobs/exec-abc123/result
+curl http://localhost:8080/api/v1/jobs/exec-abc123/result?requestId=req-001&targetDtoClass=com.example.myservice.dto.CustomerDataDTO
 ```
 
 ---

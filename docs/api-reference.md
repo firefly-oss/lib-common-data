@@ -27,6 +27,7 @@ public interface DataJobService {
     Mono<JobStageResponse> checkJob(JobStageRequest request);
     Mono<JobStageResponse> collectJobResults(JobStageRequest request);
     Mono<JobStageResponse> getJobResult(JobStageRequest request);
+    Mono<JobStageResponse> stopJob(JobStageRequest request, String reason);
     default JobStage getSupportedStage() { return JobStage.ALL; }
 }
 ```
@@ -180,10 +181,11 @@ REST API interface for job stage endpoints.
 @Tag(name = "Data Jobs", description = "Data processing job management endpoints")
 @RequestMapping("/api/v1/jobs")
 public interface DataJobController {
-    Mono<JobStageResponse> startJob(@Valid @RequestBody JobStageRequest request);
+    Mono<JobStageResponse> startJob(@Valid @RequestBody JobStartRequest request);
     Mono<JobStageResponse> checkJob(@PathVariable String executionId, @RequestParam(required = false) String requestId);
     Mono<JobStageResponse> collectJobResults(@PathVariable String executionId, @RequestParam(required = false) String requestId);
     Mono<JobStageResponse> getJobResult(@PathVariable String executionId, @RequestParam(required = false) String requestId, @RequestParam(required = false) String targetDtoClass);
+    Mono<JobStageResponse> stopJob(@PathVariable String executionId, @RequestParam(required = false) String requestId, @RequestParam(required = false) String reason);
 }
 ```
 
@@ -193,18 +195,27 @@ public interface DataJobController {
 
 Start a new data processing job.
 
-**Request Body:**
+**Request Body (JobStartRequest):**
 ```json
 {
-  "stage": "START",
-  "jobType": "customer-data-extraction",
   "parameters": {
     "customerId": "12345"
   },
   "requestId": "req-001",
-  "initiator": "user@example.com"
+  "initiator": "user@example.com",
+  "metadata": {
+    "department": "sales"
+  }
 }
 ```
+
+**Request Fields:**
+- `parameters` (Map<String, Object>, required): Input parameters for the job
+- `requestId` (String, optional): Request ID for tracing and correlation
+- `initiator` (String, optional): User or system that initiated the request
+- `metadata` (Map<String, String>, optional): Additional metadata
+
+**Note:** The `stage`, `executionId`, and `jobType` fields are NOT part of the request body. These are managed internally by the controller and service layer.
 
 **Response:**
 ```json
@@ -326,6 +337,36 @@ Get final results (transformed data).
 
 ---
 
+##### POST /api/v1/jobs/{executionId}/stop
+
+Stop a running job execution.
+
+**Path Parameters:**
+- `executionId` - The job execution ID (required)
+
+**Query Parameters:**
+- `requestId` - Optional request ID for tracing
+- `reason` - Optional reason for stopping the job
+
+**Response:**
+```json
+{
+  "stage": "STOP",
+  "executionId": "exec-abc123",
+  "status": "ABORTED",
+  "success": true,
+  "message": "Job stopped: User requested cancellation",
+  "timestamp": "2025-01-15T10:45:00Z"
+}
+```
+
+**Status Codes:**
+- `200` - Job stopped successfully
+- `404` - Job execution not found
+- `500` - Internal server error
+
+---
+
 ## Model Classes
 
 ### JobStage
@@ -340,6 +381,7 @@ public enum JobStage {
     CHECK,    // Monitor job progress and status
     COLLECT,  // Gather raw results (no transformation)
     RESULT,   // Transform and return final results
+    STOP,     // Stop a running job execution
     ALL       // Used for services handling all stages
 }
 ```
@@ -506,6 +548,52 @@ Retrieves the execution history of a job.
 
 **Returns:**
 - `Mono<JobExecution>` - Complete job execution details including history
+
+---
+
+### JobExecutionRequest
+
+Request model for starting a job execution in the orchestrator.
+
+**Package:** `com.firefly.common.data.orchestration.model`
+
+```java
+@Data
+@Builder
+public class JobExecutionRequest {
+    private String jobDefinition;      // Required: Job definition identifier (e.g., state machine ARN)
+    private String executionName;      // Optional: Unique name for this execution
+    private Map<String, Object> input; // Input parameters for the job
+    private String requestId;          // Request ID for tracing and correlation
+    private String initiator;          // User or system that initiated the job
+    private String traceHeader;        // Optional trace header for distributed tracing
+    private Map<String, String> metadata; // Additional metadata
+}
+```
+
+**Fields:**
+- `jobDefinition` (String, required) - The job definition identifier (e.g., state machine ARN for AWS Step Functions)
+- `executionName` (String, optional) - Unique name for this execution (auto-generated if not provided)
+- `input` (Map<String, Object>) - Input parameters for the job execution
+- `requestId` (String) - Request ID for tracing and correlation across distributed systems
+- `initiator` (String) - User or system that initiated the job execution
+- `traceHeader` (String) - Optional trace header for distributed tracing (e.g., X-Amzn-Trace-Id)
+- `metadata` (Map<String, String>) - Additional metadata, tags, or contextual information
+
+**Best Practice:**
+Use the `buildJobExecutionRequest()` helper method in `AbstractResilientDataJobService` to automatically populate all fields from `JobStageRequest`:
+
+```java
+@Override
+protected Mono<JobStageResponse> doStartJob(JobStageRequest request) {
+    JobExecutionRequest executionRequest = buildJobExecutionRequest(
+        request,
+        "my-job-definition"
+    );
+    return jobOrchestrator.startJob(executionRequest)
+        .map(execution -> JobStageResponse.success(...));
+}
+```
 
 ---
 

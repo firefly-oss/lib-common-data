@@ -17,6 +17,7 @@
 package com.firefly.common.data.model;
 
 import com.firefly.common.data.orchestration.model.JobExecutionStatus;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -32,56 +33,67 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Schema(description = "Response from a job stage operation")
 public class JobStageResponse {
 
     /**
      * The stage that was executed.
      */
+    @Schema(description = "The job stage that was executed", example = "START")
     private JobStage stage;
 
     /**
      * The execution ID.
      */
+    @Schema(description = "Unique identifier for the job execution", example = "exec-123-456")
     private String executionId;
 
     /**
      * The current status of the job.
      */
+    @Schema(description = "Current status of the job execution", example = "RUNNING")
     private JobExecutionStatus status;
 
     /**
      * Success indicator.
      */
+    @Schema(description = "Whether the operation was successful", example = "true")
     private boolean success;
 
     /**
      * Response message.
      */
+    @Schema(description = "Human-readable message about the operation", example = "Job started successfully")
     private String message;
 
     /**
      * Progress percentage (0-100) for CHECK stage.
      */
+    @Schema(description = "Progress percentage (0-100), primarily used in CHECK stage", example = "75")
     private Integer progressPercentage;
 
     /**
      * Result data.
      */
+    @Schema(description = "Result data from the job operation")
     private Map<String, Object> data;
 
     /**
      * Error details if operation failed.
      */
+    @Schema(description = "Error message if the operation failed", example = "Job execution not found")
     private String error;
 
     /**
      * Timestamp of the response.
      */
+    @Schema(description = "Timestamp when the response was generated", example = "2025-10-15T10:30:00Z")
     private Instant timestamp;
 
     /**
      * Additional metadata.
      */
+    @Schema(description = "Additional metadata about the operation")
     private Map<String, String> metadata;
 
     /**

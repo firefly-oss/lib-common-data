@@ -32,7 +32,7 @@ A powerful Spring Boot library that enables standardized data processing archite
 The `lib-common-data` library provides a unified approach to building data processing microservices within the Firefly ecosystem. It establishes common patterns for:
 
 - **Job Orchestration**: Integration with workflow orchestrators like AWS Step Functions
-- **Job Lifecycle Management**: Standardized stages (START, CHECK, COLLECT, RESULT)
+- **Job Lifecycle Management**: Standardized stages (START, CHECK, COLLECT, RESULT, STOP)
 - **Event-Driven Architecture**: Seamless integration with `lib-common-eda`
 - **CQRS Support**: Built-in CQRS pattern integration via `lib-common-cqrs`
 - **Transactional Workflows**: Full SAGA support through `lib-transactional-engine` with step event publishing
@@ -189,10 +189,11 @@ public class MyDataJobService extends AbstractResilientDataJobService {
     protected Mono<JobStageResponse> doStartJob(JobStageRequest request) {
         log.debug("Starting job with parameters: {}", request.getParameters());
 
-        JobExecutionRequest executionRequest = JobExecutionRequest.builder()
-            .jobDefinition("my-data-processing-workflow")
-            .input(request.getParameters())
-            .build();
+        // Use helper method to build JobExecutionRequest with all fields
+        JobExecutionRequest executionRequest = buildJobExecutionRequest(
+            request,
+            "my-data-processing-workflow"
+        );
 
         return jobOrchestrator.startJob(executionRequest)
             .map(execution -> JobStageResponse.success(
@@ -236,6 +237,16 @@ public class MyDataJobService extends AbstractResilientDataJobService {
     }
 
     @Override
+    protected Mono<JobStageResponse> doStopJob(JobStageRequest request, String reason) {
+        return jobOrchestrator.stopJob(request.getExecutionId(), reason)
+            .map(status -> JobStageResponse.success(
+                JobStage.STOP,
+                request.getExecutionId(),
+                "Job stopped: " + reason
+            ));
+    }
+
+    @Override
     protected String getOrchestratorType() {
         return jobOrchestrator.getOrchestratorType();
     }
@@ -243,6 +254,16 @@ public class MyDataJobService extends AbstractResilientDataJobService {
     @Override
     protected String getJobDefinition() {
         return "my-data-processing-workflow";
+    }
+
+    @Override
+    protected String getJobName() {
+        return "MyDataJob";
+    }
+
+    @Override
+    protected String getJobDescription() {
+        return "Processes customer data using workflow orchestration";
     }
 }
 ```
@@ -255,6 +276,20 @@ public class MyDataJobService extends AbstractResilientDataJobService {
 - ✅ Execution result persistence with caching
 - ✅ Comprehensive logging for all lifecycle phases
 - ✅ Event publishing for job lifecycle events
+- ✅ Automatic job discovery and registration logging at startup
+
+**Required Methods to Implement:**
+- `doStartJob(JobStageRequest)` - Start a new job execution
+- `doCheckJob(JobStageRequest)` - Check job status
+- `doCollectJobResults(JobStageRequest)` - Collect raw job results
+- `doGetJobResult(JobStageRequest)` - Get transformed job results
+- `doStopJob(JobStageRequest, String)` - Stop a running job
+
+**Recommended Methods to Override:**
+- `getJobName()` - Return a meaningful job name (default: class name)
+- `getJobDescription()` - Return a description of what the job does
+- `getOrchestratorType()` - Return the orchestrator type (e.g., "AWS_STEP_FUNCTIONS")
+- `getJobDefinition()` - Return the job definition identifier (e.g., state machine ARN)
 
 **Option B: Implement DataJobService Interface (Manual approach)**
 
@@ -277,13 +312,65 @@ This approach provides automatic comprehensive logging for all HTTP requests/res
 
 ```java
 @RestController
-public class MyDataJobController extends AbstractDataJobController {
+@Tag(name = "Data Job - CustomerData", description = "Customer data processing job management endpoints")
+public class CustomerDataJobController extends AbstractDataJobController {
 
-    public MyDataJobController(DataJobService dataJobService) {
+    public CustomerDataJobController(DataJobService dataJobService) {
         super(dataJobService);
     }
 
     // That's it! All endpoints are implemented with automatic logging
+}
+```
+
+**Dynamic Swagger Tags:**
+
+The `@Tag` annotation can be set dynamically based on the job name. You have two options:
+
+**Option 1: Manual Tag (Explicit Control)**
+```java
+@RestController
+@Tag(name = "Data Job - CustomerData", description = "Customer data processing job management endpoints")
+public class CustomerDataJobController extends AbstractDataJobController {
+    // ...
+}
+```
+
+**Option 2: Use Helper Methods (Auto-Generated from Service)**
+```java
+@RestController
+@Tag(name = "#{customerDataJobController.swaggerTagName}",
+     description = "#{customerDataJobController.swaggerTagDescription}")
+public class CustomerDataJobController extends AbstractDataJobController {
+
+    public CustomerDataJobController(DataJobService dataJobService) {
+        super(dataJobService);
+    }
+
+    // The tag name is automatically generated from the service's getJobName() method
+    // Result: "Data Job - CustomerDataJob"
+}
+```
+
+**Option 3: Override Tag Generation Methods**
+```java
+@RestController
+@Tag(name = "Data Job - Orders", description = "Order processing endpoints")
+public class OrderDataJobController extends AbstractDataJobController {
+
+    public OrderDataJobController(DataJobService dataJobService) {
+        super(dataJobService);
+    }
+
+    @Override
+    protected String getSwaggerTagName(String jobName) {
+        return "Data Job - Orders";
+    }
+
+    @Override
+    protected String getSwaggerTagDescription(String jobName) {
+        return "Order processing and management endpoints";
+    }
 }
 ```
 
@@ -293,6 +380,7 @@ public class MyDataJobController extends AbstractDataJobController {
 - ✅ Automatic logging of error responses with error details
 - ✅ Request/response timing information
 - ✅ All standard endpoints already implemented
+- ✅ Dynamic Swagger tag generation based on job name
 
 **Option B: Implement DataJobController Interface (Manual approach)**
 
@@ -310,9 +398,19 @@ public class MyDataJobController implements DataJobController {
     }
 
     @Override
-    public Mono<JobStageResponse> startJob(JobStageRequest request) {
-        log.info("Starting job: {}", request);
-        return dataJobService.startJob(request);
+    public Mono<JobStageResponse> startJob(JobStartRequest request) {
+        log.info("Starting job with parameters: {}", request.getParameters());
+
+        // Convert JobStartRequest to JobStageRequest for service layer
+        JobStageRequest stageRequest = JobStageRequest.builder()
+            .stage(JobStage.START)
+            .parameters(request.getParameters())
+            .requestId(request.getRequestId())
+            .initiator(request.getInitiator())
+            .metadata(request.getMetadata())
+            .build();
+
+        return dataJobService.startJob(stageRequest);
     }
 
     @Override
@@ -348,6 +446,68 @@ public class MyDataJobController implements DataJobController {
             .build();
         return dataJobService.getJobResult(request);
     }
+}
+```
+
+### 4. Job Auto-Discovery
+
+When your application starts, `lib-common-data` automatically discovers and logs all registered DataJobs:
+
+```
+================================================================================
+DATA JOB DISCOVERY - Scanning for registered DataJobs...
+================================================================================
+Found 2 DataJobService implementation(s):
+
+  ✓ Job: CustomerDataJob
+    ├─ Bean Name: customerDataJobService
+    ├─ Class: CustomerDataJobService
+    ├─ Description: Processes customer data using workflow orchestration
+    ├─ Orchestrator: AWS_STEP_FUNCTIONS
+    └─ Job Definition: arn:aws:states:us-east-1:123456789012:stateMachine:customer-data-extraction
+
+  ✓ Job: OrderDataJob
+    ├─ Bean Name: orderDataJobService
+    ├─ Class: OrderDataJobService
+    ├─ Description: Processes order data using workflow orchestration
+    ├─ Orchestrator: AWS_STEP_FUNCTIONS
+    └─ Job Definition: arn:aws:states:us-east-1:123456789012:stateMachine:order-data-extraction
+
+Found 2 DataJobController implementation(s):
+  ✓ Controller: customerDataJobController (CustomerDataJobController)
+  ✓ Controller: orderDataJobController (OrderDataJobController)
+
+================================================================================
+DATA JOB DISCOVERY COMPLETE - 2 job(s) registered and ready
+================================================================================
+```
+
+**Benefits:**
+- ✅ Verify all jobs are correctly registered at startup
+- ✅ Identify configuration issues early
+- ✅ Document available jobs in logs
+- ✅ Useful for debugging and monitoring
+
+**To get better discovery information, override these methods in your service:**
+```java
+@Override
+protected String getJobName() {
+    return "CustomerDataJob";
+}
+
+@Override
+protected String getJobDescription() {
+    return "Processes customer data using workflow orchestration";
+}
+
+@Override
+protected String getOrchestratorType() {
+    return "AWS_STEP_FUNCTIONS";
+}
+
+@Override
+protected String getJobDefinition() {
+    return "arn:aws:states:us-east-1:123456789012:stateMachine:customer-data-extraction";
 }
 ```
 
@@ -387,15 +547,15 @@ Define MapStruct mappers to transform raw job results into target DTOs:
 ```java
 @Mapper(componentModel = "spring")
 public interface CustomerDataMapper extends JobResultMapper<Map<String, Object>, CustomerDTO> {
-    
+
     @Override
-    @Mapping(source = "customerId", target = "id")
-    @Mapping(source = "firstName", target = "givenName")
-    @Mapping(source = "lastName", target = "familyName")
-    @Mapping(source = "email", target = "emailAddress")
-    @Mapping(source = "createdAt", target = "registrationDate")
+    @Mapping(source = "customer_id", target = "id")
+    @Mapping(source = "first_name", target = "givenName")
+    @Mapping(source = "last_name", target = "familyName")
+    @Mapping(source = "email_address", target = "emailAddress")
+    @Mapping(source = "created_at", target = "registrationDate")
     CustomerDTO mapToTarget(Map<String, Object> rawData);
-    
+
     @Override
     default Class<CustomerDTO> getTargetType() {
         return CustomerDTO.class;
@@ -403,25 +563,27 @@ public interface CustomerDataMapper extends JobResultMapper<Map<String, Object>,
 }
 ```
 
+**Note:** The source field names use snake_case as they typically come from database queries or external APIs. The target DTO uses camelCase following Java conventions.
+
 **Complex Mapping Example:**
 
 ```java
 @Mapper(componentModel = "spring")
 public interface SalesDataMapper extends JobResultMapper<Map<String, Object>, SalesReportDTO> {
-    
+
     @Override
     @Mapping(target = "reportId", expression = "java(java.util.UUID.randomUUID().toString())")
-    @Mapping(source = "totalRevenue", target = "revenue")
-    @Mapping(source = "orderCount", target = "totalOrders")
-    @Mapping(source = "period", target = "reportingPeriod", qualifiedByName = "parsePeriod")
+    @Mapping(source = "total_revenue", target = "revenue")
+    @Mapping(source = "order_count", target = "totalOrders")
+    @Mapping(source = "reporting_period", target = "reportingPeriod", qualifiedByName = "parsePeriod")
     SalesReportDTO mapToTarget(Map<String, Object> rawData);
-    
+
     @Named("parsePeriod")
     default ReportingPeriod parsePeriod(String period) {
         // Custom transformation logic
         return ReportingPeriod.fromString(period);
     }
-    
+
     @Override
     default Class<SalesReportDTO> getTargetType() {
         return SalesReportDTO.class;

@@ -41,6 +41,11 @@ public enum JobStage {
     RESULT,
 
     /**
+     * Stop stage: Stop a running job execution.
+     */
+    STOP,
+
+    /**
      * All stages: Used for services that handle all stages.
      */
     ALL

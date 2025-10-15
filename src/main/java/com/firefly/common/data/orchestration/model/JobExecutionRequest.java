@@ -50,12 +50,26 @@ public class JobExecutionRequest {
     private Map<String, Object> input;
 
     /**
-     * Optional trace header for distributed tracing.
+     * Request ID for tracing and correlation across distributed systems.
+     * This ID can be used to track the request through multiple services.
+     */
+    private String requestId;
+
+    /**
+     * Initiator or user who triggered the job execution.
+     * Useful for audit trails, authorization, and tracking who started the job.
+     */
+    private String initiator;
+
+    /**
+     * Optional trace header for distributed tracing (e.g., X-Amzn-Trace-Id for AWS X-Ray).
+     * If not provided, can be auto-generated from requestId.
      */
     private String traceHeader;
 
     /**
      * Additional metadata for the job execution.
+     * Can include tags, custom headers, or other contextual information.
      */
     private Map<String, String> metadata;
 }

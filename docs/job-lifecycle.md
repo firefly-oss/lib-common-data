@@ -71,9 +71,10 @@ public enum JobStage {
 ┌─────────────────────────────────────────────────────────────┐ │
 │ POST /api/v1/jobs/start                                     │ │
 │ {                                                           │ │
-│   "stage": "START",                                         │ │
-│   "jobType": "customer-data",                               │ │
-│   "parameters": { "customerId": "12345" }                   │ │
+│   "parameters": {                                           │ │
+│     "customerId": "12345"                                   │ │
+│   },                                                        │ │
+│   "requestId": "req-001"                                    │ │
 │ }                                                           │ │
 └────┬────────────────────────────────────────────────────────┘ │
      │                                                          │
@@ -197,11 +198,25 @@ public enum JobStage {
 
 **Purpose:** Initialize and trigger a data processing job
 
-**Request Model:**
+**HTTP Request:**
+```bash
+curl -X POST http://localhost:8080/api/v1/jobs/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "parameters": {
+      "customerId": "12345",
+      "includeHistory": true,
+      "dateRange": "2024-01-01:2024-12-31"
+    },
+    "requestId": "req-001",
+    "initiator": "user@example.com"
+  }'
+```
+
+**Internal Request Model (used by service layer):**
 ```java
 JobStageRequest request = JobStageRequest.builder()
     .stage(JobStage.START)
-    .jobType("customer-data-extraction")
     .parameters(Map.of(
         "customerId", "12345",
         "includeHistory", true,
