@@ -16,6 +16,7 @@
 
 package com.firefly.common.data.service;
 
+import com.firefly.common.data.cache.EnrichmentCacheService;
 import com.firefly.common.data.controller.EndpointAware;
 import com.firefly.common.data.enrichment.EnrichmentResponseBuilder;
 import com.firefly.common.data.enrichment.EnrichmentStrategyApplier;
@@ -25,9 +26,13 @@ import com.firefly.common.data.model.EnrichmentResponse;
 import com.firefly.common.data.model.EnrichmentStrategy;
 import com.firefly.common.data.observability.JobMetricsService;
 import com.firefly.common.data.observability.JobTracingService;
+import com.firefly.common.data.operation.ProviderOperation;
 import com.firefly.common.data.resiliency.ResiliencyDecoratorService;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
+
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Type-safe abstract base class for data enrichers with automatic strategy application.
@@ -116,25 +121,39 @@ public abstract class TypedDataEnricher<TSource, TProvider, TTarget>
 
     private final Class<TTarget> targetClass;
     private String enrichmentEndpoint;
-    
+
     /**
-     * Constructor with all dependencies and target class.
+     * Full constructor with all dependencies including cache.
      *
      * @param tracingService service for distributed tracing
      * @param metricsService service for metrics collection
      * @param resiliencyService service for resiliency patterns
      * @param eventPublisher publisher for enrichment events
+     * @param cacheService service for caching enrichment results (optional)
      * @param targetClass the target DTO class
      */
     protected TypedDataEnricher(JobTracingService tracingService,
                                JobMetricsService metricsService,
                                ResiliencyDecoratorService resiliencyService,
                                EnrichmentEventPublisher eventPublisher,
+                               EnrichmentCacheService cacheService,
                                Class<TTarget> targetClass) {
-        super(tracingService, metricsService, resiliencyService, eventPublisher);
+        super(tracingService, metricsService, resiliencyService, eventPublisher, cacheService);
         this.targetClass = targetClass;
     }
-    
+
+    /**
+     * Constructor without cache for backward compatibility.
+     */
+    protected TypedDataEnricher(JobTracingService tracingService,
+                               JobMetricsService metricsService,
+                               ResiliencyDecoratorService resiliencyService,
+                               EnrichmentEventPublisher eventPublisher,
+                               Class<TTarget> targetClass) {
+        super(tracingService, metricsService, resiliencyService, eventPublisher, null);
+        this.targetClass = targetClass;
+    }
+
     /**
      * Constructor without event publisher for backward compatibility.
      */
@@ -142,7 +161,7 @@ public abstract class TypedDataEnricher<TSource, TProvider, TTarget>
                                JobMetricsService metricsService,
                                ResiliencyDecoratorService resiliencyService,
                                Class<TTarget> targetClass) {
-        super(tracingService, metricsService, resiliencyService);
+        super(tracingService, metricsService, resiliencyService, null, null);
         this.targetClass = targetClass;
     }
     
@@ -342,6 +361,50 @@ public abstract class TypedDataEnricher<TSource, TProvider, TTarget>
     @Override
     public String getEnrichmentEndpoint() {
         return enrichmentEndpoint;
+    }
+
+    /**
+     * Gets the list of provider-specific operations supported by this enricher.
+     *
+     * <p>Provider operations are auxiliary operations that support the enrichment workflow,
+     * such as ID lookups, entity matching, validation, and quick queries.</p>
+     *
+     * <p>Subclasses can override this method to provide their own operations.
+     * By default, returns an empty list (no operations).</p>
+     *
+     * <p><b>Example:</b></p>
+     * <pre>{@code
+     * @Service
+     * public class CreditBureauEnricher extends TypedDataEnricher<...> {
+     *
+     *     private final SearchCompanyOperation searchCompanyOperation;
+     *     private final ValidateTaxIdOperation validateTaxIdOperation;
+     *
+     *     public CreditBureauEnricher(
+     *             // ... enricher dependencies ...
+     *             SearchCompanyOperation searchCompanyOperation,
+     *             ValidateTaxIdOperation validateTaxIdOperation) {
+     *         // ... enricher initialization ...
+     *         this.searchCompanyOperation = searchCompanyOperation;
+     *         this.validateTaxIdOperation = validateTaxIdOperation;
+     *     }
+     *
+     *     @Override
+     *     public List<ProviderOperation<?, ?>> getOperations() {
+     *         return List.of(
+     *             searchCompanyOperation,
+     *             validateTaxIdOperation
+     *         );
+     *     }
+     * }
+     * }</pre>
+     *
+     * @return list of provider operations (empty by default)
+     * @see ProviderOperation
+     * @see com.firefly.common.data.operation.AbstractProviderOperation
+     */
+    public List<ProviderOperation<?, ?>> getOperations() {
+        return Collections.emptyList();
     }
 }
 

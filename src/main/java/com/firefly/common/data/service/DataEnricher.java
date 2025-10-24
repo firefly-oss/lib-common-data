@@ -18,7 +18,10 @@ package com.firefly.common.data.service;
 
 import com.firefly.common.data.model.EnrichmentRequest;
 import com.firefly.common.data.model.EnrichmentResponse;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.util.List;
 
 /**
  * Service interface for data enrichment operations.
@@ -129,7 +132,7 @@ public interface DataEnricher {
     
     /**
      * Enriches data using the specified enrichment request.
-     * 
+     *
      * <p>This method performs the data enrichment operation by:</p>
      * <ol>
      *   <li>Calling the third-party provider with the request parameters</li>
@@ -137,13 +140,58 @@ public interface DataEnricher {
      *   <li>Applying the enrichment strategy (ENHANCE, MERGE, REPLACE, or RAW)</li>
      *   <li>Returning the enriched data in the response</li>
      * </ol>
-     * 
+     *
      * <p>The method is reactive and returns a Mono for non-blocking execution.</p>
-     * 
+     *
      * @param request the enrichment request containing source data, parameters, and strategy
      * @return a Mono emitting the enrichment response with enriched data
      */
     Mono<EnrichmentResponse> enrich(EnrichmentRequest request);
+
+    /**
+     * Enriches multiple data items in a batch operation.
+     *
+     * <p>This method performs batch enrichment with the following features:</p>
+     * <ul>
+     *   <li><b>Parallel Processing</b> - Processes multiple requests concurrently</li>
+     *   <li><b>Cache Integration</b> - Checks cache before calling provider</li>
+     *   <li><b>Error Handling</b> - Individual failures don't fail the entire batch</li>
+     *   <li><b>Rate Limiting</b> - Respects provider rate limits via parallelism control</li>
+     * </ul>
+     *
+     * <p><b>Default Implementation:</b> Processes requests sequentially using {@link #enrich(EnrichmentRequest)}.
+     * Implementations should override this for better performance with parallel processing.</p>
+     *
+     * <p><b>Example Usage:</b></p>
+     * <pre>{@code
+     * List<EnrichmentRequest> requests = List.of(
+     *     EnrichmentRequest.builder()
+     *         .enrichmentType("company-profile")
+     *         .strategy(EnrichmentStrategy.ENHANCE)
+     *         .parameters(Map.of("companyId", "12345"))
+     *         .build(),
+     *     EnrichmentRequest.builder()
+     *         .enrichmentType("company-profile")
+     *         .strategy(EnrichmentStrategy.ENHANCE)
+     *         .parameters(Map.of("companyId", "67890"))
+     *         .build()
+     * );
+     *
+     * Flux<EnrichmentResponse> responses = enricher.enrichBatch(requests);
+     * }</pre>
+     *
+     * @param requests the list of enrichment requests to process
+     * @return a Flux emitting enrichment responses in the same order as requests
+     */
+    default Flux<EnrichmentResponse> enrichBatch(List<EnrichmentRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return Flux.empty();
+        }
+
+        // Default implementation: sequential processing
+        return Flux.fromIterable(requests)
+            .flatMapSequential(this::enrich);
+    }
     
     /**
      * Gets the name of the enrichment provider.
