@@ -1,92 +1,52 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <!-- Get properties from Spring Boot -->
-    <springProperty scope="context" name="applicationName" source="spring.application.name" defaultValue="application"/>
-    <springProperty scope="context" name="profile" source="spring.profiles.active" defaultValue="default"/>
-    <property name="hostName" value="${HOSTNAME:-unknown}"/>
-    <property name="podName" value="${POD_NAME:-unknown}"/>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 
-    <!-- Stop logback from outputting its own status at startup -->
-    <statusListener class="ch.qos.logback.core.status.NopStatusListener" />
+    <!-- Property for log format (default: json, can be overridden with FIREFLY_LOG_FORMAT=text) -->
+    <property name="LOG_FORMAT" value="${FIREFLY_LOG_FORMAT:-json}"/>
 
-    <!-- Console Appender -->
+    <!-- Console Appender with MDC fields (text format) -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
-            <!-- Add application metadata -->
-            <customFields>{
-                "service": {
-                "name": "${applicationName}",
-                "environment": "${profile}",
-                "host": "${hostName}",
-                "instance": "${podName}"
-                }
-                }</customFields>
-
-            <!-- Configure timestamp format (ISO-8601) -->
-            <timestampPattern>yyyy-MM-dd'T'HH:mm:ss.SSSZZ</timestampPattern>
-
-            <!-- Include caller data (class name, method, etc.) -->
-            <includeCallerData>true</includeCallerData>
-
-            <!-- Configure field names with better structure -->
-            <fieldNames>
-                <timestamp>timestamp</timestamp>
-                <version>[ignore]</version>
-                <logger>logger</logger>
-                <thread>thread</thread>
-                <level>level</level>
-                <levelValue>[ignore]</levelValue>
-                <message>message</message>
-                <stackTrace>exception.stacktrace</stackTrace>
-                <mdc>context</mdc>
-            </fieldNames>
-
-            <!-- Providers for additional context -->
-            <provider class="net.logstash.logback.composite.loggingevent.LoggingEventPatternJsonProvider">
-                <pattern>
-                    {
-                    "location": {
-                    "class": "%C{0}",
-                    "method": "%M",
-                    "line": "%L",
-                    "file": "%F"
-                    }
-                    }
-                </pattern>
-            </provider>
-
-            <!-- Configure stack trace handling -->
-            <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
-                <maxDepthPerThrowable>30</maxDepthPerThrowable>
-                <maxLength>4096</maxLength>
-                <shortenedClassNameLength>20</shortenedClassNameLength>
-                <rootCauseFirst>true</rootCauseFirst>
-                <inlineHashMarker>|</inlineHashMarker>
-            </throwableConverter>
-
-            <!-- Pretty print for development environments only, single-line JSON for all others -->
-            <if condition='property("spring.profiles.active").contains("dev")'>
-                <then>
-                    <jsonGeneratorDecorator class="net.logstash.logback.decorate.PrettyPrintingJsonGeneratorDecorator"/>
-                </then>
-            </if>
-
-            <!-- Handle structured arguments -->
-            <provider class="net.logstash.logback.composite.loggingevent.ArgumentsJsonProvider"/>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [traceId=%X{traceId:-N/A} spanId=%X{spanId:-N/A} requestId=%X{requestId:-N/A} eventId=%X{eventId:-N/A} provider=%X{provider:-N/A}] - %msg%n</pattern>
         </encoder>
     </appender>
 
-    <!-- Async appender to improve performance -->
-    <appender name="ASYNC" class="ch.qos.logback.classic.AsyncAppender">
-        <queueSize>512</queueSize>
-        <discardingThreshold>0</discardingThreshold>
-        <includeCallerData>true</includeCallerData>
-        <neverBlock>true</neverBlock>
-        <appender-ref ref="CONSOLE"/>
+    <!-- JSON Appender for production -->
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>traceId</includeMdcKeyName>
+            <includeMdcKeyName>spanId</includeMdcKeyName>
+            <includeMdcKeyName>requestId</includeMdcKeyName>
+            <includeMdcKeyName>eventId</includeMdcKeyName>
+            <includeMdcKeyName>provider</includeMdcKeyName>
+        </encoder>
     </appender>
 
-    <!-- Root logger configuration -->
+    <!-- Root Logger - uses JSON by default, CONSOLE if FIREFLY_LOG_FORMAT=text -->
     <root level="INFO">
-        <appender-ref ref="ASYNC"/>
+        <if condition='property("LOG_FORMAT").equals("text")'>
+            <then>
+                <appender-ref ref="CONSOLE" />
+            </then>
+            <else>
+                <appender-ref ref="JSON" />
+            </else>
+        </if>
     </root>
+
+    <!-- Application Loggers -->
+    <logger name="com.firefly.common.webhooks" level="DEBUG" />
+    <logger name="com.firefly.common.eda" level="DEBUG" />
+    <logger name="com.firefly.common.cache" level="INFO" />
+
+    <!-- Resilience4j Loggers -->
+    <logger name="io.github.resilience4j" level="INFO" />
+
+    <!-- Spring Loggers -->
+    <logger name="org.springframework" level="INFO" />
+    <logger name="org.springframework.web" level="INFO" />
+
+    <!-- Kafka Loggers -->
+    <logger name="org.apache.kafka" level="WARN" />
 </configuration>

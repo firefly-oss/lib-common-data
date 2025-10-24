@@ -16,10 +16,15 @@
 
 package com.firefly.common.data.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.firefly.common.cache.core.CacheAdapter;
+import com.firefly.common.data.cache.EnrichmentCacheKeyGenerator;
+import com.firefly.common.data.cache.EnrichmentCacheService;
 import com.firefly.common.data.service.DataEnricher;
 import com.firefly.common.data.service.DataEnricherRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -34,6 +39,8 @@ import java.util.List;
  * <ul>
  *   <li>Data enrichment properties</li>
  *   <li>Data enricher registry for discovering enrichers</li>
+ *   <li>Enrichment cache service (when cache is enabled and CacheAdapter is available)</li>
+ *   <li>Cache key generator for tenant-isolated caching</li>
  * </ul>
  *
  * <p>Note: EnrichmentEventPublisher is auto-discovered via @Service annotation
@@ -52,8 +59,11 @@ import java.util.List;
  *     enrichment:
  *       enabled: true
  *       publish-events: true
- *       cache-enabled: false
+ *       cache-enabled: true
+ *       cache-ttl-seconds: 3600
  *       default-timeout-seconds: 30
+ *       max-batch-size: 100
+ *       batch-parallelism: 10
  * }</pre>
  */
 @Slf4j
@@ -90,5 +100,42 @@ public class DataEnrichmentAutoConfiguration {
     public DataEnricherRegistry dataEnricherRegistry(List<DataEnricher> enrichers) {
         log.info("Creating DataEnricherRegistry bean with {} enrichers", enrichers.size());
         return new DataEnricherRegistry(enrichers);
+    }
+
+    /**
+     * Creates the enrichment cache key generator bean.
+     *
+     * <p>This generator creates tenant-isolated cache keys for enrichment requests.</p>
+     */
+    @Bean
+    public EnrichmentCacheKeyGenerator enrichmentCacheKeyGenerator(ObjectMapper objectMapper) {
+        log.info("Creating EnrichmentCacheKeyGenerator bean");
+        return new EnrichmentCacheKeyGenerator(objectMapper);
+    }
+
+    /**
+     * Creates the enrichment cache service bean.
+     *
+     * <p>This service is only created when:</p>
+     * <ul>
+     *   <li>Cache is enabled via firefly.data.enrichment.cache-enabled=true</li>
+     *   <li>A CacheAdapter bean is available (from lib-common-cache)</li>
+     * </ul>
+     *
+     * <p>The cache service provides tenant-isolated caching of enrichment results.</p>
+     */
+    @Bean
+    @ConditionalOnProperty(
+        prefix = "firefly.data.enrichment",
+        name = "cache-enabled",
+        havingValue = "true"
+    )
+    @ConditionalOnBean(CacheAdapter.class)
+    public EnrichmentCacheService enrichmentCacheService(
+            CacheAdapter cacheAdapter,
+            EnrichmentCacheKeyGenerator keyGenerator,
+            DataEnrichmentProperties properties) {
+        log.info("Creating EnrichmentCacheService bean with cache type: {}", cacheAdapter.getCacheType());
+        return new EnrichmentCacheService(cacheAdapter, keyGenerator, properties);
     }
 }

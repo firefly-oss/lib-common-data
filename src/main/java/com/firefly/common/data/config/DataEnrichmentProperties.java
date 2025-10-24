@@ -86,5 +86,27 @@ public class DataEnrichmentProperties {
      * Maximum number of retry attempts.
      */
     private int maxRetryAttempts = 3;
+
+    /**
+     * Maximum number of requests in a batch enrichment operation.
+     */
+    private int maxBatchSize = 100;
+
+    /**
+     * Maximum parallelism for batch enrichment operations.
+     *
+     * <p>Controls how many enrichment requests are processed in parallel
+     * during batch operations. Higher values increase throughput but also
+     * increase resource usage.</p>
+     */
+    private int batchParallelism = 10;
+
+    /**
+     * Whether to fail fast on batch enrichment errors.
+     *
+     * <p>If true, the entire batch fails when any single enrichment fails.
+     * If false, individual failures are returned in the batch response.</p>
+     */
+    private boolean batchFailFast = false;
 }
 
