@@ -5,7 +5,11 @@ Complete API reference for `lib-common-data`.
 ## Table of Contents
 
 - [Service Interfaces](#service-interfaces)
+  - [Asynchronous Jobs](#asynchronous-jobs)
+  - [Synchronous Jobs](#synchronous-jobs)
 - [Controller Interfaces](#controller-interfaces)
+  - [Asynchronous Controllers](#asynchronous-controllers)
+  - [Synchronous Controllers](#synchronous-controllers)
 - [Model Classes](#model-classes)
 - [Orchestration Interfaces](#orchestration-interfaces)
 - [Mapper Interfaces](#mapper-interfaces)
@@ -15,9 +19,11 @@ Complete API reference for `lib-common-data`.
 
 ## Service Interfaces
 
-### DataJobService
+### Asynchronous Jobs
 
-Business logic interface for job stage operations.
+#### DataJobService
+
+Business logic interface for multi-stage job operations.
 
 **Package:** `com.firefly.common.data.service`
 
@@ -167,9 +173,76 @@ Mono<JobStageResponse> response = dataJobService.getJobResult(request);
 
 ---
 
+### Synchronous Jobs
+
+#### SyncDataJobService
+
+Business logic interface for single-stage synchronous job operations.
+
+**Package:** `com.firefly.common.data.service`
+
+```java
+public interface SyncDataJobService {
+    Mono<JobStageResponse> execute(JobStageRequest request);
+    default String getJobName() { return getClass().getSimpleName(); }
+    default String getJobDescription() { return "Synchronous data job"; }
+}
+```
+
+#### Methods
+
+##### execute
+
+```java
+Mono<JobStageResponse> execute(JobStageRequest request)
+```
+
+Executes a synchronous data job in a single operation.
+
+**Parameters:**
+- `request` - Job execution request containing input parameters
+
+**Returns:**
+- `Mono<JobStageResponse>` - Response with execution results
+
+**Responsibilities:**
+- Validate input parameters
+- Execute the job logic synchronously
+- Return results immediately (< 30 seconds)
+- Handle errors gracefully
+
+**Example:**
+```java
+JobStageRequest request = JobStageRequest.builder()
+    .stage(JobStage.ALL)
+    .parameters(Map.of("customerId", "12345"))
+    .build();
+
+Mono<JobStageResponse> response = syncDataJobService.execute(request);
+```
+
+**Use Cases:**
+- Customer data enrichment
+- Real-time validation
+- Credit checks
+- Quick transformations
+- Synchronous lookups
+
+**When to Use:**
+- Operations complete in < 30 seconds
+- Real-time response required
+- No need for progress tracking
+- Simple, single-step operations
+
+See [Synchronous Jobs Guide](sync-jobs.md) for complete documentation and examples.
+
+---
+
 ## Controller Interfaces
 
-### DataJobController
+### Asynchronous Controllers
+
+#### DataJobController
 
 REST API interface for job stage endpoints.
 
@@ -364,6 +437,98 @@ Stop a running job execution.
 - `200` - Job stopped successfully
 - `404` - Job execution not found
 - `500` - Internal server error
+
+---
+
+### Synchronous Controllers
+
+#### SyncDataJobController
+
+REST API interface for synchronous job operations.
+
+**Package:** `com.firefly.common.data.controller`
+
+```java
+@Tag(name = "Sync Data Jobs")
+@RequestMapping("/api/v1")
+public interface SyncDataJobController {
+    @PostMapping("/execute")
+    Mono<JobStageResponse> execute(
+        @RequestParam Map<String, Object> parameters,
+        @RequestParam(required = false) String requestId,
+        @RequestParam(required = false) String initiator,
+        @RequestParam(required = false) String metadata
+    );
+}
+```
+
+#### Endpoints
+
+##### POST /api/v1/execute
+
+Execute a synchronous data job (single operation, returns results immediately).
+
+**Request Parameters:**
+- `parameters` (Map<String, Object>, required): Input parameters for the job
+- `requestId` (String, optional): Request ID for tracing and correlation
+- `initiator` (String, optional): User or system that initiated the request
+- `metadata` (String, optional): Additional metadata as JSON string
+
+**Example Request:**
+```bash
+curl -X POST "http://localhost:8080/api/v1/execute" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "parameters[customerId]=12345" \
+  -d "requestId=req-001" \
+  -d "initiator=user@example.com" \
+  -d 'metadata={"department":"sales"}'
+```
+
+**Response:**
+```json
+{
+  "stage": "ALL",
+  "executionId": "sync-abc123",
+  "status": "SUCCEEDED",
+  "data": {
+    "result": {
+      "customerId": "12345",
+      "firstName": "John",
+      "lastName": "Doe",
+      "email": "john@example.com"
+    }
+  },
+  "success": true,
+  "message": "Job executed successfully",
+  "timestamp": "2025-01-15T10:30:00Z"
+}
+```
+
+**Status Codes:**
+- `200` - Job executed successfully
+- `400` - Invalid request parameters
+- `500` - Internal server error
+
+**Use Cases:**
+- Quick data enrichment (< 30 seconds)
+- Real-time validation
+- Synchronous transformations
+- Credit checks
+- Customer lookups
+
+**When to Use:**
+- Operations that complete in < 30 seconds
+- Real-time API responses required
+- No need for progress tracking
+- Simple, single-step operations
+
+**When NOT to Use:**
+- Long-running operations (> 30 seconds)
+- Complex multi-step workflows
+- Operations requiring progress monitoring
+- Jobs that may timeout
+
+See [Synchronous Jobs Guide](sync-jobs.md) for complete documentation.
 
 ---
 

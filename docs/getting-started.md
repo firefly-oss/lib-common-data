@@ -1,13 +1,15 @@
 # Getting Started
 
-This guide will walk you through setting up and using the `lib-common-data` library in your microservice.
+This guide will walk you through setting up and using the `lib-common-data` library in your microservice for both **Data Jobs** (orchestrated workflows) and **Data Enrichment** (third-party provider integration).
 
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
-- [Basic Setup](#basic-setup)
-- [Complete Example](#complete-example)
+- [Basic Setup - Data Jobs](#basic-setup---data-jobs)
+- [Basic Setup - Data Enrichment](#basic-setup---data-enrichment)
+- [Complete Example - Data Jobs](#complete-example---data-jobs)
+- [Complete Example - Data Enrichment](#complete-example---data-enrichment)
 - [Running the Application](#running-the-application)
 - [Testing Your Implementation](#testing-your-implementation)
 - [Next Steps](#next-steps)
@@ -22,14 +24,19 @@ Before you begin, ensure you have:
 - **Maven 3.8+** or Gradle 7+
 - **Spring Boot 3.x** knowledge
 - **Reactive programming** familiarity (Project Reactor)
+
+### For Data Jobs
+
 - Access to an **orchestrator** (Apache Airflow, AWS Step Functions, or mock for development)
-
-### Optional Dependencies
-
-For full functionality, you may need:
-- **Kafka** or **RabbitMQ** (for event publishing)
+- **Kafka** or **RabbitMQ** (optional, for event publishing)
 - **Apache Airflow** instance (if using Airflow orchestrator)
 - **AWS credentials** (if using AWS Step Functions orchestrator)
+
+### For Data Enrichment
+
+- Access to **third-party provider APIs** (financial data, credit bureaus, etc.)
+- **API credentials** for the providers you want to integrate
+- **lib-common-client** dependency (automatically included with lib-common-data)
 
 ---
 
@@ -60,6 +67,8 @@ Add the following to your `pom.xml`:
 
 Create or update `src/main/resources/application.yml`:
 
+#### For Data Jobs
+
 ```yaml
 spring:
   application:
@@ -70,11 +79,11 @@ firefly:
     # Enable EDA integration
     eda:
       enabled: true
-    
+
     # Enable CQRS integration
     cqrs:
       enabled: true
-    
+
     # Configure job orchestration
     orchestration:
       enabled: true
@@ -88,7 +97,7 @@ firefly:
         username: airflow
         password: airflow
         dag-id-prefix: my_service
-    
+
     # Enable transactional engine (optional)
     transactional:
       enabled: false
@@ -99,17 +108,6 @@ firefly:
     topic: my-service-step-events
     include-job-context: true
 
-# EDA configuration (if using Kafka)
-  eda:
-    publishers:
-      - id: default
-        type: KAFKA
-        connection-id: kafka-default
-    connections:
-      kafka:
-        - id: kafka-default
-          bootstrap-servers: localhost:9092
-
 # Logging (JSON by default, use "plain" for development)
 logging:
   format: json  # or "plain" for human-readable logs
@@ -118,9 +116,48 @@ logging:
     reactor: INFO
 ```
 
+#### For Data Enrichment
+
+```yaml
+spring:
+  application:
+    name: my-enrichment-service
+
+firefly:
+  data:
+    # Enable data enrichment
+    enrichment:
+      enabled: true
+      publish-events: true
+      default-timeout-seconds: 30
+
+    # Resiliency configuration (optional - has sensible defaults)
+    orchestration:
+      resiliency:
+        circuit-breaker-enabled: true
+        circuit-breaker-failure-rate-threshold: 50.0
+        circuit-breaker-wait-duration-in-open-state: 60s
+        retry-enabled: true
+        retry-max-attempts: 3
+        retry-wait-duration: 5s
+        rate-limiter-enabled: false
+
+# Provider-specific configuration
+financial-data:
+  base-url: https://api.financial-data-provider.example
+  api-key: ${FINANCIAL_DATA_API_KEY}
+
+# Logging
+logging:
+  format: json
+  level:
+    com.firefly: DEBUG
+    reactor: INFO
+```
+
 ---
 
-## Basic Setup
+## Basic Setup - Data Jobs
 
 ### Step 1: Create Domain Models
 
@@ -570,7 +607,205 @@ public class CustomerDataJobController extends AbstractDataJobController {
 
 ---
 
-## Complete Example
+## Basic Setup - Data Enrichment
+
+### Step 1: Create Domain Models
+
+Define your DTOs for enrichment:
+
+```java
+package com.example.myservice.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+/**
+ * Company profile DTO - your application's format.
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class CompanyProfileDTO {
+    private String companyId;
+    private String name;
+    private String registeredAddress;
+    private String industry;
+    private Double annualRevenue;
+    private Integer employeeCount;
+}
+
+/**
+ * Financial data provider response - provider's format.
+ */
+@Data
+public class FinancialDataResponse {
+    private String id;
+    private String businessName;
+    private String primaryAddress;
+    private String sector;
+    private Double revenue;
+    private Integer totalEmployees;
+}
+```
+
+### Step 2: Implement Data Enricher
+
+> **💡 Recommended Approach**: Use `TypedDataEnricher` for automatic strategy application and 67% less code.
+
+```java
+package com.example.myservice.enricher;
+
+import com.firefly.common.client.ServiceClient;
+import com.firefly.common.client.rest.RestClient;
+import com.firefly.common.data.event.EnrichmentEventPublisher;
+import com.firefly.common.data.model.EnrichmentRequest;
+import com.firefly.common.data.observability.JobMetricsService;
+import com.firefly.common.data.observability.JobTracingService;
+import com.firefly.common.data.resiliency.ResiliencyDecoratorService;
+import com.firefly.common.data.service.TypedDataEnricher;
+import com.example.myservice.dto.CompanyProfileDTO;
+import com.example.myservice.dto.FinancialDataResponse;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
+
+import java.time.Duration;
+
+@Slf4j
+@Service
+public class FinancialDataEnricher
+        extends TypedDataEnricher<CompanyProfileDTO, FinancialDataResponse, CompanyProfileDTO> {
+
+    private final RestClient financialDataClient;
+
+    public FinancialDataEnricher(
+            JobTracingService tracingService,
+            JobMetricsService metricsService,
+            ResiliencyDecoratorService resiliencyService,
+            EnrichmentEventPublisher eventPublisher,
+            @Value("${financial-data.base-url}") String baseUrl,
+            @Value("${financial-data.api-key}") String apiKey) {
+        super(tracingService, metricsService, resiliencyService, eventPublisher, CompanyProfileDTO.class);
+
+        // Create REST client using lib-common-client
+        this.financialDataClient = ServiceClient.rest("financial-data-provider")
+            .baseUrl(baseUrl)
+            .defaultHeader("Authorization", "Bearer " + apiKey)
+            .timeout(Duration.ofSeconds(30))
+            .build();
+
+        log.info("Initialized Financial Data Enricher with base URL: {}", baseUrl);
+    }
+
+    /**
+     * Step 1: Fetch data from the provider's API.
+     * The framework handles tracing, metrics, circuit breaker, and retry automatically.
+     */
+    @Override
+    protected Mono<FinancialDataResponse> fetchProviderData(EnrichmentRequest request) {
+        String companyId = request.requireParam("companyId");
+
+        log.debug("Fetching financial data for company ID: {}", companyId);
+
+        return financialDataClient.get("/companies/{id}", FinancialDataResponse.class)
+            .withPathParam("id", companyId)
+            .execute()
+            .doOnSuccess(response ->
+                log.debug("Successfully fetched financial data for company ID: {}", companyId))
+            .doOnError(error ->
+                log.error("Failed to fetch financial data for company ID: {}", companyId, error));
+    }
+
+    /**
+     * Step 2: Map provider data to your target DTO format.
+     * The framework automatically applies the enrichment strategy (ENHANCE/MERGE/REPLACE/RAW).
+     */
+    @Override
+    protected CompanyProfileDTO mapToTarget(FinancialDataResponse providerData) {
+        return CompanyProfileDTO.builder()
+                .companyId(providerData.getId())
+                .name(providerData.getBusinessName())
+                .registeredAddress(providerData.getPrimaryAddress())
+                .industry(providerData.getSector())
+                .annualRevenue(providerData.getRevenue())
+                .employeeCount(providerData.getTotalEmployees())
+                .build();
+    }
+
+    @Override
+    public String getProviderName() {
+        return "Financial Data Provider";
+    }
+
+    @Override
+    public String[] getSupportedEnrichmentTypes() {
+        return new String[]{"company-profile", "company-financials"};
+    }
+
+    @Override
+    public String getEnricherDescription() {
+        return "Enriches company data with financial and corporate information";
+    }
+}
+```
+
+**What happens automatically:**
+- ✅ Distributed tracing with Micrometer
+- ✅ Metrics collection (execution time, success/failure rates, data sizes)
+- ✅ Circuit breaker, retry, rate limiting, and bulkhead patterns
+- ✅ Automatic enrichment strategy application (ENHANCE/MERGE/REPLACE/RAW)
+- ✅ Automatic response building with metadata and field counting
+- ✅ Event publishing for enrichment lifecycle events
+- ✅ Comprehensive logging for all enrichment phases
+
+### Step 3: Implement Data Enricher Controller
+
+> **💡 Recommended Approach**: Use `AbstractDataEnricherController` for automatic comprehensive logging.
+
+```java
+package com.example.myservice.controller;
+
+import com.firefly.common.data.controller.AbstractDataEnricherController;
+import com.firefly.common.data.service.DataEnricher;
+import com.firefly.common.data.service.DataEnricherRegistry;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/v1/enrichment/financial-data-company")
+@Tag(name = "Data Enrichment - Financial Data Company",
+     description = "Financial data company profile enrichment")
+public class FinancialDataCompanyController extends AbstractDataEnricherController {
+
+    public FinancialDataCompanyController(
+            @Qualifier("financialDataEnricher") DataEnricher enricher,
+            DataEnricherRegistry registry) {
+        super(enricher, registry);
+    }
+
+    // That's it! All endpoints are implemented with automatic logging:
+    // POST /api/v1/enrichment/financial-data-company/enrich
+    // GET  /api/v1/enrichment/financial-data-company/health
+    // GET  /api/v1/enrichment/financial-data-company/operations (if ProviderOperationCatalog is implemented)
+}
+```
+
+**Benefits**: Automatic logging of all HTTP requests/responses with parameters, enrichment details, errors, and timing.
+
+**URL Pattern**: `/api/v1/enrichment/{provider}-{region}-{type}`
+- **provider**: financial-data
+- **region**: (optional, e.g., spain, usa)
+- **type**: company
+
+---
+
+## Complete Example - Data Jobs
 
 ### Project Structure
 
@@ -612,6 +847,176 @@ public class MyDataServiceApplication {
     public static void main(String[] args) {
         SpringApplication.run(MyDataServiceApplication.class, args);
     }
+}
+```
+
+---
+
+## Complete Example - Data Enrichment
+
+### Project Structure
+
+```
+my-enrichment-service/
+├── src/
+│   ├── main/
+│   │   ├── java/
+│   │   │   └── com/example/myservice/
+│   │   │       ├── MyEnrichmentServiceApplication.java
+│   │   │       ├── dto/
+│   │   │       │   ├── CompanyProfileDTO.java
+│   │   │       │   └── FinancialDataResponse.java
+│   │   │       ├── enricher/
+│   │   │       │   └── FinancialDataEnricher.java
+│   │   │       └── controller/
+│   │   │           └── FinancialDataCompanyController.java
+│   │   └── resources/
+│   │       └── application.yml
+│   └── test/
+│       └── java/
+│           └── com/example/myservice/
+│               └── enricher/
+│                   └── FinancialDataEnricherTest.java
+└── pom.xml
+```
+
+### Full Application Class
+
+```java
+package com.example.myservice;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class MyEnrichmentServiceApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(MyEnrichmentServiceApplication.class, args);
+    }
+}
+```
+
+### Complete application.yml
+
+```yaml
+spring:
+  application:
+    name: my-enrichment-service
+
+server:
+  port: 8080
+
+firefly:
+  data:
+    # Enable data enrichment
+    enrichment:
+      enabled: true
+      publish-events: true
+      default-timeout-seconds: 30
+
+    # Resiliency configuration (applies to both jobs and enrichment)
+    orchestration:
+      resiliency:
+        circuit-breaker-enabled: true
+        circuit-breaker-failure-rate-threshold: 50.0
+        circuit-breaker-wait-duration-in-open-state: 60s
+        retry-enabled: true
+        retry-max-attempts: 3
+        retry-wait-duration: 5s
+        rate-limiter-enabled: false
+
+# Provider-specific configuration
+financial-data:
+  base-url: https://api.financial-data-provider.example
+  api-key: ${FINANCIAL_DATA_API_KEY}
+
+# Logging
+logging:
+  format: json
+  level:
+    com.firefly: DEBUG
+    com.example.myservice: DEBUG
+    reactor: INFO
+```
+
+### Example Usage
+
+#### 1. Discover Available Providers
+
+```bash
+curl -X GET "http://localhost:8080/api/v1/enrichment/providers"
+```
+
+Response:
+```json
+{
+  "providers": [
+    {
+      "providerName": "Financial Data Provider",
+      "supportedTypes": ["company-profile", "company-financials"],
+      "description": "Enriches company data with financial and corporate information",
+      "endpoints": [
+        "/api/v1/enrichment/financial-data-company/enrich"
+      ],
+      "operations": null
+    }
+  ]
+}
+```
+
+#### 2. Enrich Company Data
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/enrichment/financial-data-company/enrich" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enrichmentType": "company-profile",
+    "strategy": "ENHANCE",
+    "sourceDto": {
+      "companyId": "12345",
+      "name": "Acme Corp"
+    },
+    "parameters": {
+      "companyId": "12345"
+    },
+    "requestId": "req-001"
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "enrichedData": {
+    "companyId": "12345",
+    "name": "Acme Corp",
+    "registeredAddress": "123 Main St, New York, NY 10001",
+    "industry": "Technology",
+    "annualRevenue": 5000000.0,
+    "employeeCount": 50
+  },
+  "providerName": "Financial Data Provider",
+  "enrichmentType": "company-profile",
+  "strategy": "ENHANCE",
+  "message": "Enrichment successful",
+  "fieldsEnriched": 4,
+  "requestId": "req-001"
+}
+```
+
+#### 3. Check Health
+
+```bash
+curl -X GET "http://localhost:8080/api/v1/enrichment/financial-data-company/health"
+```
+
+Response:
+```json
+{
+  "status": "UP",
+  "providerName": "Financial Data Provider",
+  "supportedTypes": ["company-profile", "company-financials"]
 }
 ```
 
@@ -745,6 +1150,7 @@ mvn test
 Now that you have a basic implementation:
 
 1. **Explore Advanced Features**
+   - [Synchronous Jobs](sync-jobs.md) for quick operations (< 30 seconds)
    - [SAGA Integration](saga-integration.md) for distributed transactions
    - [Custom Mappers](mappers.md) for complex transformations
    - [Event Publishing](../README.md#event-publishing) for observability

@@ -120,21 +120,34 @@ config/
 
 REST API interface definitions:
 
+#### Asynchronous Jobs (Multi-Stage)
+
 ```java
 @Tag(name = "Data Jobs")
 @RequestMapping("/api/v1/jobs")
 public interface DataJobController {
     @PostMapping("/start")
     Mono<JobStageResponse> startJob(@Valid @RequestBody JobStageRequest request);
-    
+
     @GetMapping("/{executionId}/check")
     Mono<JobStageResponse> checkJob(@PathVariable String executionId, ...);
-    
+
     @GetMapping("/{executionId}/collect")
     Mono<JobStageResponse> collectJobResults(@PathVariable String executionId, ...);
-    
+
     @GetMapping("/{executionId}/result")
     Mono<JobStageResponse> getJobResult(@PathVariable String executionId, ...);
+}
+```
+
+#### Synchronous Jobs (Single-Stage)
+
+```java
+@Tag(name = "Sync Data Jobs")
+@RequestMapping("/api/v1")
+public interface SyncDataJobController {
+    @PostMapping("/execute")
+    Mono<JobStageResponse> execute(@RequestParam Map<String, Object> parameters, ...);
 }
 ```
 
@@ -146,7 +159,9 @@ public interface DataJobController {
 
 ### 3. Service Layer
 
-Business logic interface:
+Business logic interfaces:
+
+#### Asynchronous Jobs (Multi-Stage)
 
 ```java
 public interface DataJobService {
@@ -157,11 +172,20 @@ public interface DataJobService {
 }
 ```
 
+#### Synchronous Jobs (Single-Stage)
+
+```java
+public interface SyncDataJobService {
+    Mono<JobStageResponse> execute(JobStageRequest request);
+}
+```
+
 **Responsibilities:**
 - Implement job lifecycle logic
-- Coordinate with orchestrator
+- Coordinate with orchestrator (async) or execute directly (sync)
 - Handle transformations via mappers
 - Publish events for observability
+- Provide observability, resiliency, and persistence (via abstract base classes)
 
 ### 4. Model Layer
 
@@ -521,7 +545,7 @@ stepevents/
 Client          Controller      Service         Orchestrator    Mapper          EDA
   │                 │              │                 │            │              │
   │─START──────────>│              │                 │            │              │
-  │                 │──startJob──>│                 │            │              │
+  │                 │───startJob──>│                 │            │              │
   │                 │              │──startJob──────>│            │              │
   │                 │              │<─execution──────│            │              │
   │                 │              │─────────────────────────────────publish────>│
@@ -529,8 +553,8 @@ Client          Controller      Service         Orchestrator    Mapper          
   │<────────────────│              │                 │            │              │
   │                 │              │                 │            │              │
   │─CHECK──────────>│              │                 │            │              │
-  │                 │──checkJob──>│                 │            │              │
-  │                 │              │──checkStatus──>│            │              │
+  │                 │──checkJob───>│                 │            │              │
+  │                 │              │──checkStatus───>│            │              │
   │                 │              │<─status─────────│            │              │
   │                 │<─response────│                 │            │              │
   │<────────────────│              │                 │            │              │
@@ -543,13 +567,13 @@ Client          Controller      Service         Orchestrator    Mapper          
   │<────────────────│              │                 │            │              │
   │                 │              │                 │            │              │
   │─RESULT─────────>│              │                 │            │              │
-  │                 │──getResult─>│                 │            │              │
+  │                 │───getResult─>│                 │            │              │
   │                 │              │──collect───────>│            │              │
   │                 │              │<─rawData────────│            │              │
-  │                 │              │──getMapper─────────────────>│              │
-  │                 │              │<─mapper─────────────────────│              │
-  │                 │              │──mapToTarget───────────────>│              │
-  │                 │              │<─mappedDTO──────────────────│              │
+  │                 │              │──getMapper──────────────────>│              │
+  │                 │              │<─mapper──────────────────────│              │
+  │                 │              │──mapToTarget────────────────>│              │
+  │                 │              │<─mappedDTO───────────────────│              │
   │                 │<─mappedDTO───│                 │            │              │
   │<────────────────│              │                 │            │              │
 ```
@@ -560,15 +584,17 @@ Client          Controller      Service         Orchestrator    Mapper          
 
 The `lib-common-data` architecture provides:
 
-✅ **Clean Architecture** - Hexagonal design with clear boundaries  
-✅ **Flexibility** - Pluggable adapters for different platforms  
-✅ **Testability** - Dependency inversion enables easy mocking  
-✅ **Scalability** - Reactive programming and CQRS support  
-✅ **Observability** - Built-in event publishing and tracing  
-✅ **Reliability** - SAGA pattern for distributed transactions  
+✅ **Clean Architecture** - Hexagonal design with clear boundaries
+✅ **Flexibility** - Pluggable adapters for different platforms
+✅ **Dual Job Types** - Asynchronous (multi-stage) and Synchronous (single-stage) jobs
+✅ **Testability** - Dependency inversion enables easy mocking
+✅ **Scalability** - Reactive programming and CQRS support
+✅ **Observability** - Built-in event publishing and tracing
+✅ **Reliability** - SAGA pattern for distributed transactions
 
 For more details, see:
-- [Job Lifecycle](job-lifecycle.md) - Detailed stage documentation
+- [Job Lifecycle](job-lifecycle.md) - Detailed stage documentation for async jobs
+- [Synchronous Jobs](sync-jobs.md) - Complete guide for synchronous jobs
 - [Configuration](configuration.md) - Configuration options
 - [Examples](examples.md) - Real-world usage patterns
 

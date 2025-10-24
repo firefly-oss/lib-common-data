@@ -32,7 +32,10 @@ A powerful Spring Boot library that enables standardized data processing archite
 The `lib-common-data` library provides a unified approach to building data processing microservices within the Firefly ecosystem. It establishes common patterns for:
 
 - **Job Orchestration**: Integration with workflow orchestrators like AWS Step Functions
-- **Job Lifecycle Management**: Standardized stages (START, CHECK, COLLECT, RESULT, STOP)
+- **Job Lifecycle Management**:
+  - **Asynchronous Jobs**: Multi-stage lifecycle (START, CHECK, COLLECT, RESULT, STOP) for long-running workflows
+  - **Synchronous Jobs**: Single-stage execution for quick operations (< 30 seconds)
+- **Data Enrichment**: Standardized abstraction for enriching data from third-party providers (financial data, credit bureaus, business intelligence, etc.)
 - **Event-Driven Architecture**: Seamless integration with `lib-common-eda`
 - **CQRS Support**: Built-in CQRS pattern integration via `lib-common-cqrs`
 - **Transactional Workflows**: Full SAGA support through `lib-transactional-engine` with step event publishing
@@ -59,18 +62,36 @@ The `lib-common-data` library provides a unified approach to building data proce
 
 ### 🔄 Standardized Job Stages
 
-All core-data microservices follow the same job lifecycle:
+The library supports two types of data jobs:
+
+#### Asynchronous Jobs (Multi-Stage)
+For long-running workflows (> 30 seconds):
 
 1. **START**: Initialize and trigger data processing jobs
 2. **CHECK**: Monitor job progress and status
 3. **COLLECT**: Gather intermediate or final results
 4. **RESULT**: Retrieve final results and perform cleanup
 
+#### Synchronous Jobs (Single-Stage)
+For quick operations (< 30 seconds):
+
+1. **EXECUTE**: Single operation that returns results immediately
+
+See [Synchronous Jobs Guide](docs/sync-jobs.md) for detailed documentation.
+
 ### 🎨 Service & Controller Interfaces
 
-- **DataJobService**: Business logic interface for job stage operations
+#### Asynchronous Jobs
+- **DataJobService**: Business logic interface for multi-stage job operations
 - **DataJobController**: REST API interface with OpenAPI documentation
-- Consistent API contracts across all core-data microservices
+- **AbstractResilientDataJobService**: Base class with observability, resiliency, and persistence
+
+#### Synchronous Jobs
+- **SyncDataJobService**: Business logic interface for single-stage execution
+- **SyncDataJobController**: REST API interface for synchronous operations
+- **AbstractResilientSyncDataJobService**: Base class with automatic features
+
+Consistent API contracts across all core-data microservices
 
 ### 📡 EDA & CQRS Integration
 
@@ -117,6 +138,66 @@ All core-data microservices follow the same job lifecycle:
 - **Multi-Database Support** - JPA, MongoDB, DynamoDB, Redis, or custom implementations
 - **Configurable Retention** - Automatic cleanup of old audit entries and results
 - **Sensitive Data Sanitization** - Built-in protection for sensitive information
+
+### 🔍 Data Enrichment
+
+Standardized abstraction for enriching data from third-party providers (financial data, credit bureaus, business intelligence, etc.).
+
+#### Core Features
+
+- **Type-Safe Enrichers** - Generic base class `TypedDataEnricher<TSource, TProvider, TTarget>` with automatic strategy application (67% less code!)
+- **Fluent Validation DSL** - Declarative parameter validation with `EnrichmentRequestValidator`
+  - Required/optional parameters
+  - Type validation (String, Integer, Boolean, etc.)
+  - Pattern matching (regex)
+  - Custom validators
+- **Automatic Strategy Application** - Four strategies for merging data:
+  - **ENHANCE**: Fill only null fields (preserves existing data)
+  - **MERGE**: Combine source + provider (provider wins conflicts)
+  - **REPLACE**: Use only provider data (ignore source)
+  - **RAW**: Return provider data as-is without mapping
+- **Multiple Provider Support** - Financial data providers, credit bureaus, business intelligence, and custom providers
+- **Multi-Region Architecture** - One microservice per provider with multiple regional implementations (e.g., Provider A Spain, Provider A USA)
+
+#### Integration & Observability
+
+- **ServiceClient Integration** - Use REST, SOAP, or gRPC clients from `lib-common-client`
+- **Automatic Observability** - Built-in tracing, metrics, and event publishing for enrichment operations
+  - Distributed tracing with trace/span IDs
+  - Metrics for success/failure rates, duration, data size
+  - Enrichment lifecycle events (started, completed, failed)
+- **Resiliency Patterns** - Circuit breaker, retry, rate limiting, and bulkhead for provider calls
+- **Error Handling** - Comprehensive error handling with detailed error messages and metadata
+
+#### REST API & Discovery
+
+- **Provider Discovery** - Global discovery endpoint to list available providers and enrichment types
+  - `GET /api/v1/enrichment/providers` - List all providers
+  - `GET /api/v1/enrichment/providers?enrichmentType=credit-report` - Filter by type
+  - Returns provider names, supported types, descriptions, and REST endpoints
+- **REST API** - Standardized REST endpoints for enrichment operations (one endpoint per regional implementation)
+  - `POST /api/v1/enrichment/{provider-region-type}/enrich` - Enrich data
+  - `GET /api/v1/enrichment/{provider-region-type}/health` - Health check
+- **Automatic Endpoint Registration** - Controllers automatically register their endpoints with enrichers
+- **OpenAPI Documentation** - Full Swagger/OpenAPI documentation for all endpoints
+
+#### Configuration
+
+- **Auto-Configuration** - Automatic Spring Boot configuration with `DataEnrichmentAutoConfiguration`
+- **Configurable Properties** - Comprehensive configuration via `application.yml`:
+  ```yaml
+  firefly:
+    data:
+      enrichment:
+        enabled: true
+        publish-events: true
+        cache-enabled: false
+        default-timeout-seconds: 30
+        retry-enabled: true
+        max-retry-attempts: 3
+  ```
+
+See [Data Enrichment Guide](docs/data-enrichment.md) for detailed documentation.
 
 ## Installation
 
@@ -323,53 +404,17 @@ public class CustomerDataJobController extends AbstractDataJobController {
 }
 ```
 
-**Dynamic Swagger Tags:**
+**Swagger Tags:**
 
-The `@Tag` annotation can be set dynamically based on the job name. You have two options:
+The `@Tag` annotation should be added to specify the Swagger documentation tag:
 
-**Option 1: Manual Tag (Explicit Control)**
 ```java
 @RestController
 @Tag(name = "Data Job - CustomerData", description = "Customer data processing job management endpoints")
 public class CustomerDataJobController extends AbstractDataJobController {
-    // ...
-}
-```
-
-**Option 2: Use Helper Methods (Auto-Generated from Service)**
-```java
-@RestController
-@Tag(name = "#{customerDataJobController.swaggerTagName}",
-     description = "#{customerDataJobController.swaggerTagDescription}")
-public class CustomerDataJobController extends AbstractDataJobController {
 
     public CustomerDataJobController(DataJobService dataJobService) {
         super(dataJobService);
-    }
-
-    // The tag name is automatically generated from the service's getJobName() method
-    // Result: "Data Job - CustomerDataJob"
-}
-```
-
-**Option 3: Override Tag Generation Methods**
-```java
-@RestController
-@Tag(name = "Data Job - Orders", description = "Order processing endpoints")
-public class OrderDataJobController extends AbstractDataJobController {
-
-    public OrderDataJobController(DataJobService dataJobService) {
-        super(dataJobService);
-    }
-
-    @Override
-    protected String getSwaggerTagName(String jobName) {
-        return "Data Job - Orders";
-    }
-
-    @Override
-    protected String getSwaggerTagDescription(String jobName) {
-        return "Order processing and management endpoints";
     }
 }
 ```
@@ -510,6 +555,257 @@ protected String getJobDefinition() {
     return "arn:aws:states:us-east-1:123456789012:stateMachine:customer-data-extraction";
 }
 ```
+
+### 5. Implement Data Enricher (Recommended: Use TypedDataEnricher)
+
+**Option A: Extend TypedDataEnricher (Recommended)**
+
+This approach provides built-in observability, resiliency, and automatic strategy application:
+
+```java
+@Service
+public class FinancialDataEnricher
+        extends TypedDataEnricher<CompanyProfileDTO, FinancialDataResponse, CompanyProfileDTO> {
+
+    private final RestClient financialDataClient;
+
+    public FinancialDataEnricher(
+            JobTracingService tracingService,
+            JobMetricsService metricsService,
+            ResiliencyDecoratorService resiliencyService,
+            EnrichmentEventPublisher eventPublisher,
+            @Value("${financial-data.base-url}") String baseUrl,
+            @Value("${financial-data.api-key}") String apiKey) {
+        super(tracingService, metricsService, resiliencyService, eventPublisher, CompanyProfileDTO.class);
+
+        // Create REST client using lib-common-client
+        this.financialDataClient = ServiceClient.rest("financial-data-provider")
+            .baseUrl(baseUrl)
+            .defaultHeader("Authorization", "Bearer " + apiKey)
+            .timeout(Duration.ofSeconds(30))
+            .build();
+    }
+
+    /**
+     * Step 1: Fetch data from the third-party provider.
+     * The framework handles tracing, metrics, circuit breaker, and retry automatically.
+     */
+    @Override
+    protected Mono<FinancialDataResponse> fetchProviderData(EnrichmentRequest request) {
+        String companyId = request.requireParam("companyId");
+
+        return financialDataClient.get("/companies/{id}", FinancialDataResponse.class)
+            .withPathParam("id", companyId)
+            .execute();
+    }
+
+    /**
+     * Step 2: Map provider data to your target DTO format.
+     * The framework automatically applies the enrichment strategy (ENHANCE/MERGE/REPLACE/RAW)
+     * to combine this with the sourceDto.
+     */
+    @Override
+    protected CompanyProfileDTO mapToTarget(FinancialDataResponse providerData) {
+        return CompanyProfileDTO.builder()
+                .companyId(providerData.getId())
+                .name(providerData.getBusinessName())
+                .registeredAddress(providerData.getPrimaryAddress())
+                .industry(providerData.getSector())
+                .annualRevenue(providerData.getRevenue())
+                .employeeCount(providerData.getTotalEmployees())
+                .build();
+    }
+
+    @Override
+    public String getProviderName() {
+        return "Financial Data Provider";
+    }
+
+    @Override
+    public String[] getSupportedEnrichmentTypes() {
+        return new String[]{"company-profile", "company-financials"};
+    }
+
+    @Override
+    public String getEnricherDescription() {
+        return "Enriches company data with financial and corporate information";
+    }
+}
+```
+
+**Benefits of using TypedDataEnricher:**
+- ✅ Automatic distributed tracing with Micrometer
+- ✅ Metrics collection (execution time, success/failure rates, data sizes)
+- ✅ Circuit breaker, retry, rate limiting, and bulkhead patterns
+- ✅ Automatic enrichment strategy application (ENHANCE/MERGE/REPLACE/RAW)
+- ✅ Automatic response building with metadata and field counting
+- ✅ Event publishing for enrichment lifecycle events
+- ✅ Comprehensive logging for all enrichment phases
+- ✅ Type safety with generics (prevents runtime casting errors)
+
+**Required Methods to Implement:**
+- `fetchProviderData(EnrichmentRequest)` - Fetch data from the provider's API
+- `mapToTarget(TProvider)` - Map provider response to your target DTO format
+
+**Recommended Methods to Override:**
+- `getProviderName()` - Return the provider name (e.g., "Equifax Spain")
+- `getSupportedEnrichmentTypes()` - Return enrichment types this enricher supports
+- `getEnricherDescription()` - Return a description of what this enricher does
+
+**Option B: Extend AbstractResilientDataEnricher (More Control)**
+
+Use this if you need more control over the enrichment process:
+
+```java
+@Service
+public class CustomEnricher extends AbstractResilientDataEnricher {
+
+    public CustomEnricher(
+            JobTracingService tracingService,
+            JobMetricsService metricsService,
+            ResiliencyDecoratorService resiliencyService,
+            EnrichmentEventPublisher eventPublisher) {
+        super(tracingService, metricsService, resiliencyService, eventPublisher);
+    }
+
+    @Override
+    protected Mono<EnrichmentResponse> doEnrich(EnrichmentRequest request) {
+        // Full control over the enrichment process
+        // You must handle strategy application, response building, etc.
+        // See full example in docs/data-enrichment.md
+    }
+
+    @Override
+    public String getProviderName() {
+        return "Custom Provider";
+    }
+
+    @Override
+    public String[] getSupportedEnrichmentTypes() {
+        return new String[]{"custom-type"};
+    }
+}
+```
+
+### 6. Implement Data Enricher Controller (Recommended: Use AbstractDataEnricherController)
+
+**Option A: Extend AbstractDataEnricherController (Recommended)**
+
+This approach provides automatic comprehensive logging for all HTTP requests/responses:
+
+```java
+@RestController
+@RequestMapping("/api/v1/enrichment/financial-data-company")
+@Tag(name = "Data Enrichment - Financial Data Company",
+     description = "Financial data company profile enrichment")
+public class FinancialDataCompanyController extends AbstractDataEnricherController {
+
+    public FinancialDataCompanyController(
+            @Qualifier("financialDataEnricher") DataEnricher enricher,
+            DataEnricherRegistry registry) {
+        super(enricher, registry);
+    }
+
+    // That's it! All endpoints are implemented with automatic logging:
+    // POST /api/v1/enrichment/financial-data-company/enrich
+    // GET  /api/v1/enrichment/financial-data-company/health
+    // GET  /api/v1/enrichment/financial-data-company/operations (if ProviderOperationCatalog is implemented)
+    // GET|POST /api/v1/enrichment/financial-data-company/operation/{operationId} (for provider-specific operations)
+}
+```
+
+**URL Pattern:** `/api/v1/enrichment/{provider}-{region}-{type}`
+- **provider**: financial-data
+- **region**: (optional, e.g., spain, usa)
+- **type**: company
+
+**Benefits of using AbstractDataEnricherController:**
+- ✅ Automatic logging of all HTTP requests with parameters
+- ✅ Automatic logging of successful responses with enrichment details
+- ✅ Automatic logging of error responses with error details
+- ✅ Request/response timing information
+- ✅ All standard endpoints already implemented
+- ✅ Automatic endpoint registration with the enricher
+- ✅ Support for provider-specific operations (if enricher implements ProviderOperationCatalog)
+
+**Option B: Implement Custom Controller (Manual approach)**
+
+Only use this if you need custom endpoint behavior:
+
+```java
+@RestController
+@RequestMapping("/api/v1/enrichment/custom-provider")
+@Slf4j
+public class CustomEnricherController {
+
+    private final DataEnricher enricher;
+
+    public CustomEnricherController(DataEnricher enricher) {
+        this.enricher = enricher;
+    }
+
+    @PostMapping("/enrich")
+    public Mono<EnrichmentApiResponse> enrich(@RequestBody EnrichmentApiRequest request) {
+        log.info("Received enrichment request: type={}, strategy={}",
+                request.getEnrichmentType(), request.getStrategy());
+
+        return enricher.enrich(request.toEnrichmentRequest())
+            .map(EnrichmentApiResponse::fromEnrichmentResponse);
+    }
+}
+```
+
+### 7. Provider Discovery
+
+The library automatically provides a global discovery endpoint to list all available enrichers:
+
+```bash
+# List all providers in this microservice
+GET /api/v1/enrichment/providers
+
+Response:
+{
+  "providers": [
+    {
+      "providerName": "Financial Data Provider",
+      "supportedTypes": ["company-profile", "company-financials"],
+      "description": "Enriches company data with financial and corporate information",
+      "endpoints": [
+        "/api/v1/enrichment/financial-data-company/enrich"
+      ],
+      "operations": null
+    }
+  ]
+}
+
+# Filter by enrichment type
+GET /api/v1/enrichment/providers?enrichmentType=company-profile
+
+Response:
+{
+  "providers": [
+    {
+      "providerName": "Financial Data Provider",
+      "supportedTypes": ["company-profile", "company-financials"],
+      ...
+    }
+  ]
+}
+```
+
+**Benefits:**
+- ✅ Discover all available enrichers at runtime
+- ✅ Filter by enrichment type
+- ✅ Get provider metadata (name, description, supported types)
+- ✅ Get REST endpoint URLs
+- ✅ Useful for dynamic routing and service discovery
+
+**See [Data Enrichment Guide](docs/data-enrichment.md) for complete documentation including:**
+- Provider-specific operations catalog
+- Advanced validation with EnrichmentRequestValidator
+- Custom enrichment strategies
+- Caching and performance optimization
+- Complete tutorial for building a professional enricher
 
 ## Architecture
 
@@ -852,7 +1148,83 @@ When step events are published, they include comprehensive metadata:
 - `library` - Always set to "lib-common-data"
 - `routing_key` - For message partitioning (format: `{sagaName}:{sagaId}`)
 
+### Data Enrichment Configuration
+
+```yaml
+firefly:
+  data:
+    enrichment:
+      # Enable/disable data enrichment feature
+      enabled: true
+
+      # Event publishing for enrichment lifecycle events
+      publish-events: true
+
+      # Caching configuration
+      cache-enabled: false
+      cache-ttl-seconds: 3600
+
+      # Timeout configuration
+      default-timeout-seconds: 30
+
+      # Capture raw provider responses for debugging
+      capture-raw-responses: false
+
+      # Concurrency control
+      max-concurrent-enrichments: 100
+
+    # Resiliency configuration (applies to both jobs and enrichment)
+    orchestration:
+      resiliency:
+        # Circuit breaker configuration
+        circuit-breaker-enabled: true
+        circuit-breaker-failure-rate-threshold: 50.0
+        circuit-breaker-wait-duration-in-open-state: 60s
+        circuit-breaker-sliding-window-size: 100
+
+        # Retry configuration
+        retry-enabled: true
+        retry-max-attempts: 3
+        retry-wait-duration: 5s
+
+        # Rate limiter configuration
+        rate-limiter-enabled: false
+        rate-limiter-limit-for-period: 100
+        rate-limiter-limit-refresh-period: 1s
+        rate-limiter-timeout-duration: 5s
+
+        # Bulkhead configuration
+        bulkhead-enabled: false
+        bulkhead-max-concurrent-calls: 25
+        bulkhead-max-wait-duration: 500ms
+```
+
+**Data Enrichment Properties:**
+
+- `enabled` - Enable/disable the data enrichment feature (default: `true`)
+- `publish-events` - Publish enrichment lifecycle events to EDA (default: `true`)
+- `cache-enabled` - Enable caching of enrichment results (default: `false`)
+- `cache-ttl-seconds` - Cache time-to-live in seconds (default: `3600`)
+- `default-timeout-seconds` - Default timeout for provider calls (default: `30`)
+- `capture-raw-responses` - Capture raw provider responses for debugging (default: `false`)
+- `max-concurrent-enrichments` - Maximum concurrent enrichment operations (default: `100`)
+
+**Resiliency Properties** (shared between jobs and enrichment):
+
+- `circuit-breaker-enabled` - Enable circuit breaker pattern (default: `true`)
+- `circuit-breaker-failure-rate-threshold` - Failure rate threshold percentage (default: `50.0`)
+- `circuit-breaker-wait-duration-in-open-state` - Wait duration in open state (default: `60s`)
+- `retry-enabled` - Enable retry pattern (default: `true`)
+- `retry-max-attempts` - Maximum retry attempts (default: `3`)
+- `retry-wait-duration` - Wait duration between retries (default: `5s`)
+- `rate-limiter-enabled` - Enable rate limiter pattern (default: `false`)
+- `bulkhead-enabled` - Enable bulkhead pattern (default: `false`)
+
+See [Data Enrichment Guide](docs/data-enrichment.md) for complete configuration details.
+
 ## API Endpoints
+
+### Job Orchestration Endpoints
 
 When implementing `DataJobController`, the following REST endpoints are exposed:
 
@@ -861,7 +1233,98 @@ When implementing `DataJobController`, the following REST endpoints are exposed:
 - `GET /api/v1/jobs/{executionId}/collect` - Collect job results
 - `GET /api/v1/jobs/{executionId}/result` - Get final results
 
+### Data Enrichment Endpoints
+
+When implementing `AbstractDataEnricherController`, the following REST endpoints are exposed:
+
+**Per-Provider Endpoints:**
+- `POST /api/v1/enrichment/{provider-region-type}/enrich` - Enrich data using specific provider
+- `GET /api/v1/enrichment/{provider-region-type}/health` - Health check for specific provider
+- `GET /api/v1/enrichment/{provider-region-type}/operations` - List provider-specific operations
+- `GET|POST /api/v1/enrichment/{provider-region-type}/operation/{operationId}` - Execute provider-specific operation
+
+**Global Discovery Endpoint:**
+- `GET /api/v1/enrichment/providers` - List all available providers with their operations catalog
+- `GET /api/v1/enrichment/providers?enrichmentType={type}` - Filter providers by enrichment type
+
+**Example - Standard Enrichment:**
+```bash
+# Discover providers
+GET /api/v1/enrichment/providers?enrichmentType=credit-report
+
+# Enrich data using specific provider
+POST /api/v1/enrichment/provider-a-spain-credit/enrich
+{
+  "enrichmentType": "credit-report",
+  "strategy": "ENHANCE",
+  "sourceDto": { ... },
+  "parameters": { "companyId": "12345" }
+}
+```
+
+**Example - Provider-Specific Operations:**
+```bash
+# List operations for a provider
+GET /api/v1/enrichment/equifax-spain/operations
+
+# Search for company to get internal ID (before enrichment)
+GET /api/v1/enrichment/equifax-spain/operation/search-company?companyName=Acme&cif=A12345678
+
+# Validate CIF
+GET /api/v1/enrichment/equifax-spain/operation/validate-cif?cif=A12345678
+
+# Then use the internal ID for enrichment
+POST /api/v1/enrichment/equifax-spain/enrich
+{
+  "enrichmentType": "credit-report",
+  "strategy": "ENHANCE",
+  "sourceDto": { ... },
+  "parameters": { "equifaxId": "ES-12345" }
+}
+```
+
 All endpoints are documented with OpenAPI/Swagger annotations.
+
+#### Provider-Specific Operations Catalog
+
+Enrichers can expose auxiliary operations specific to the provider's API by implementing `ProviderOperationCatalog`:
+
+```java
+@Service
+public class EquifaxSpainEnricher
+        extends TypedDataEnricher<CompanyDTO, EquifaxResponse, CompanyDTO>
+        implements ProviderOperationCatalog {
+
+    @Override
+    public List<ProviderOperation> getOperationCatalog() {
+        return List.of(
+            ProviderOperation.builder()
+                .operationId("search-company")
+                .path("/search-company")
+                .method(RequestMethod.GET)
+                .description("Search for a company by name or CIF to obtain Equifax internal ID")
+                .requestExample(Map.of("companyName", "Acme Corp", "cif", "A12345678"))
+                .responseExample(Map.of("equifaxId", "ES-12345", "confidence", 0.95))
+                .tags(new String[]{"lookup", "search"})
+                .build()
+        );
+    }
+
+    @Override
+    public Mono<Map<String, Object>> executeOperation(String operationId, Map<String, Object> params) {
+        return switch (operationId) {
+            case "search-company" -> searchCompany(params);
+            default -> Mono.error(new IllegalArgumentException("Unknown operation: " + operationId));
+        };
+    }
+}
+```
+
+**Common Use Cases:**
+- **ID Lookups**: Search for internal provider IDs before enrichment
+- **Entity Matching**: Fuzzy match companies/individuals in provider's database
+- **Validation**: Validate identifiers (CIF, DUNS, VAT, etc.)
+- **Metadata**: Retrieve provider-specific metadata or configuration
 
 ## Best Practices
 
@@ -1014,6 +1477,8 @@ For detailed documentation, see the [`docs/`](docs/) directory:
   - Creating multiple controllers
   - Testing and troubleshooting
 - **[Multiple Jobs Example](docs/multiple-jobs-example.md)** - Real-world example with 3 different job types
+- **[Synchronous Jobs Guide](docs/sync-jobs.md)** - ⭐ **NEW!** Complete guide for synchronous data jobs
+- **[Data Enrichment Guide](docs/data-enrichment.md)** - ⭐ **NEW!** Complete guide for data enrichment from third-party providers
 
 ### Core Documentation
 - **[Architecture](docs/architecture.md)** - Deep dive into hexagonal architecture and design patterns
@@ -1040,9 +1505,11 @@ For detailed documentation, see the [`docs/`](docs/) directory:
 ### Quick Links for Common Tasks
 
 - **Want to create a microservice with multiple data jobs?** → See [Multiple Jobs Example](docs/multiple-jobs-example.md)
+- **Need synchronous jobs for quick operations?** → See [Synchronous Jobs Guide](docs/sync-jobs.md)
+- **Need to enrich data from third-party providers?** → See [Data Enrichment Guide](docs/data-enrichment.md)
 - **Need to understand the abstract base classes?** → See sections 2 and 3 in [Quick Start](#quick-start)
 - **Want JSON logging?** → It's enabled by default! See [Logging](docs/logging.md) for configuration
-- **Need to add observability?** → Use `AbstractResilientDataJobService` - it's automatic!
+- **Need to add observability?** → Use `AbstractResilientDataJobService` or `AbstractResilientSyncDataJobService` - it's automatic!
 
 ## Contributing
 

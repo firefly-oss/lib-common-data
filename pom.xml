@@ -99,80 +99,33 @@
             <artifactId>jackson-datatype-jsr310</artifactId>
         </dependency>
 
+        <!-- lib-common-client for REST/SOAP/gRPC client support -->
+        <dependency>
+            <groupId>com.firefly</groupId>
+            <artifactId>lib-common-client</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- lib-common-cqrs for CQRS pattern support -->
         <dependency>
             <groupId>com.firefly</groupId>
             <artifactId>lib-common-cqrs</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.springframework.boot</groupId>
-                    <artifactId>spring-boot-starter-web</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.springframework.boot</groupId>
-                    <artifactId>spring-boot-starter-tomcat</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.springframework</groupId>
-                    <artifactId>spring-webmvc</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>jakarta.servlet</groupId>
-                    <artifactId>jakarta.servlet-api</artifactId>
-                </exclusion>
-            </exclusions>
+            <version>${project.version}</version>
         </dependency>
 
         <!-- lib-common-eda for event-driven architecture support -->
         <dependency>
             <groupId>com.firefly</groupId>
             <artifactId>lib-common-eda</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.springframework.boot</groupId>
-                    <artifactId>spring-boot-starter-web</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.springframework.boot</groupId>
-                    <artifactId>spring-boot-starter-tomcat</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.springframework</groupId>
-                    <artifactId>spring-webmvc</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>jakarta.servlet</groupId>
-                    <artifactId>jakarta.servlet-api</artifactId>
-                </exclusion>
-            </exclusions>
+            <version>${project.version}</version>
         </dependency>
 
         <!-- Transactional Engine -->
         <dependency>
             <groupId>com.firefly</groupId>
             <artifactId>lib-transactional-engine</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
+            <version>${project.version}</version>
             <optional>true</optional>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.springframework.boot</groupId>
-                    <artifactId>spring-boot-starter-web</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.springframework.boot</groupId>
-                    <artifactId>spring-boot-starter-tomcat</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.springframework</groupId>
-                    <artifactId>spring-webmvc</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>jakarta.servlet</groupId>
-                    <artifactId>jakarta.servlet-api</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
 
         <!-- Resilience4j for resiliency patterns -->
