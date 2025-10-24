@@ -26,7 +26,6 @@ import com.firefly.common.data.persistence.service.JobAuditService;
 import com.firefly.common.data.persistence.service.JobExecutionResultService;
 import com.firefly.common.data.resiliency.ResiliencyDecoratorService;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationContext;
 import reactor.core.publisher.Mono;
 

@@ -18,9 +18,9 @@ package com.firefly.common.data.controller;
 
 import com.firefly.common.data.event.JobEventPublisher;
 import com.firefly.common.data.model.JobStage;
-import com.firefly.common.data.model.JobStartRequest;
 import com.firefly.common.data.model.JobStageRequest;
 import com.firefly.common.data.model.JobStageResponse;
+import com.firefly.common.data.model.JobStartRequest;
 import com.firefly.common.data.observability.JobMetricsService;
 import com.firefly.common.data.observability.JobTracingService;
 import com.firefly.common.data.persistence.service.JobAuditService;
@@ -40,7 +40,6 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**

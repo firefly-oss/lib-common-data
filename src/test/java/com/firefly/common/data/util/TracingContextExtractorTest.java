@@ -17,7 +17,6 @@
 package com.firefly.common.data.util;
 
 import brave.Tracing;
-import brave.propagation.TraceContext;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.tracing.brave.bridge.BraveBaggageManager;
