@@ -24,11 +24,11 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Auto-configuration for lib-common-eda integration with lib-common-data.
- * 
+ *
  * This configuration enables event-driven architecture support for core-data microservices,
  * allowing them to publish and consume events related to data processing jobs.
  */
-@Configuration
+@Configuration(value = "dataEdaAutoConfiguration")
 @ConditionalOnClass(name = {
     "com.firefly.common.eda.publisher.EventPublisher",
     "com.firefly.common.eda.subscriber.EventSubscriber"
@@ -39,7 +39,7 @@ import org.springframework.context.annotation.Configuration;
 })
 @Slf4j
 public class EdaAutoConfiguration {
-    
+
     public EdaAutoConfiguration() {
         log.info("Enabling lib-common-eda integration for lib-common-data");
     }

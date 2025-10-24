@@ -25,11 +25,11 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Auto-configuration for lib-common-cqrs integration with lib-common-data.
- * 
+ *
  * This configuration enables CQRS (Command Query Responsibility Segregation) support
  * for core-data microservices, separating read and write operations for better scalability.
  */
-@Configuration
+@Configuration(value = "dataCqrsAutoConfiguration")
 @ConditionalOnClass(name = {
     "com.firefly.common.cqrs.command.CommandHandler",
     "com.firefly.common.cqrs.query.QueryHandler"
@@ -41,9 +41,9 @@ import org.springframework.context.annotation.Configuration;
 })
 @Slf4j
 public class CqrsAutoConfiguration {
-    
+
     public CqrsAutoConfiguration(DataConfiguration dataConfiguration) {
-        log.info("Enabling lib-common-cqrs integration for lib-common-data - enabled: {}", 
+        log.info("Enabling lib-common-cqrs integration for lib-common-data - enabled: {}",
                 dataConfiguration.getCqrs().isEnabled());
     }
 }
