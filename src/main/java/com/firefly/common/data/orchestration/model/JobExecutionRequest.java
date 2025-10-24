@@ -16,12 +16,12 @@
 
 package com.firefly.common.data.orchestration.model;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import jakarta.validation.constraints.NotBlank;
 import java.util.Map;
 
 /**
