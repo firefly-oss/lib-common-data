@@ -20,8 +20,11 @@ import com.firefly.common.data.model.EnrichmentApiRequest;
 import com.firefly.common.data.model.EnrichmentRequest;
 import com.firefly.common.data.model.EnrichmentResponse;
 import com.firefly.common.data.model.EnrichmentStrategy;
+import com.firefly.common.data.operation.dto.CompanySearchRequest;
+import com.firefly.common.data.operation.dto.CompanySearchResponse;
 import com.firefly.common.data.service.DataEnricher;
 import com.firefly.common.data.service.DataEnricherRegistry;
+import com.firefly.common.data.service.TypedDataEnricher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -255,17 +258,16 @@ class AbstractDataEnricherControllerTest {
                 .assertNext(response -> {
                     assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
 
-                    Map<String, Object> body = response.getBody();
+                    com.firefly.common.data.controller.dto.OperationCatalogResponse body = response.getBody();
                     assertThat(body).isNotNull();
-                    assertThat(body.get("providerName")).isEqualTo("Test Provider With Ops");
+                    assertThat(body.getProviderName()).isEqualTo("Test Provider With Ops");
 
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> operations = (List<Map<String, Object>>) body.get("operations");
+                    List<com.firefly.common.data.controller.dto.OperationCatalogResponse.OperationInfo> operations = body.getOperations();
                     assertThat(operations).hasSize(2);
 
-                    Map<String, Object> op1 = operations.get(0);
-                    assertThat(op1.get("operationId")).isEqualTo("search-company");
-                    assertThat(op1.get("method")).isEqualTo("GET");
+                    com.firefly.common.data.controller.dto.OperationCatalogResponse.OperationInfo op1 = operations.get(0);
+                    assertThat(op1.getOperationId()).isEqualTo("search-company");
+                    assertThat(op1.getMethod()).isEqualTo("GET");
                 })
                 .verifyComplete();
     }
@@ -277,21 +279,24 @@ class AbstractDataEnricherControllerTest {
                 .assertNext(response -> {
                     assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
 
-                    Map<String, Object> body = response.getBody();
+                    com.firefly.common.data.controller.dto.OperationCatalogResponse body = response.getBody();
                     assertThat(body).isNotNull();
-
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> operations = (List<Map<String, Object>>) body.get("operations");
-                    assertThat(operations).isEmpty();
+                    assertThat(body.getProviderName()).isEqualTo("Test Provider");
+                    assertThat(body.getOperations()).isEmpty();
                 })
                 .verifyComplete();
     }
 
     @Test
-    void executeProviderOperation_shouldExecuteOperation_whenEnricherImplementsCatalog() {
+    void executeProviderOperation_shouldExecuteOperation_whenEnricherImplementsCatalog() throws Exception {
         // Given
         TestEnricherWithOperations enricherWithOps = new TestEnricherWithOperations();
         TestDataEnricherController controllerWithOps = new TestDataEnricherController(enricherWithOps, registry);
+
+        // Inject ObjectMapper using reflection
+        java.lang.reflect.Field objectMapperField = AbstractDataEnricherController.class.getDeclaredField("objectMapper");
+        objectMapperField.setAccessible(true);
+        objectMapperField.set(controllerWithOps, new com.fasterxml.jackson.databind.ObjectMapper());
 
         Map<String, Object> params = Map.of("companyName", "Acme Corp");
 
@@ -300,10 +305,11 @@ class AbstractDataEnricherControllerTest {
                 .assertNext(response -> {
                     assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
 
-                    Map<String, Object> body = response.getBody();
+                    CompanySearchResponse body = (CompanySearchResponse) response.getBody();
                     assertThat(body).isNotNull();
-                    assertThat(body.get("result")).isEqualTo("found");
-                    assertThat(body.get("companyName")).isEqualTo("Acme Corp");
+                    assertThat(body.getProviderId()).isEqualTo("PROV-123");
+                    assertThat(body.getCompanyName()).isEqualTo("ACME CORP");
+                    assertThat(body.getConfidence()).isEqualTo(0.95);
                 })
                 .verifyComplete();
     }
@@ -321,9 +327,13 @@ class AbstractDataEnricherControllerTest {
                 .assertNext(response -> {
                     assertThat(response.getStatusCode().is4xxClientError()).isTrue();
 
-                    Map<String, Object> body = response.getBody();
+                    com.firefly.common.data.controller.dto.OperationErrorResponse body =
+                        (com.firefly.common.data.controller.dto.OperationErrorResponse) response.getBody();
                     assertThat(body).isNotNull();
-                    assertThat(body.get("error")).asString().contains("Unknown operation");
+                    assertThat(body.getError()).contains("Operation not found");
+                    assertThat(body.getOperationId()).isEqualTo("unknown-operation");
+                    assertThat(body.getProviderName()).isEqualTo("Test Provider With Ops");
+                    assertThat(body.getAvailableOperations()).hasSize(2);
                 })
                 .verifyComplete();
     }
@@ -338,9 +348,12 @@ class AbstractDataEnricherControllerTest {
                 .assertNext(response -> {
                     assertThat(response.getStatusCode().is4xxClientError()).isTrue();
 
-                    Map<String, Object> body = response.getBody();
+                    com.firefly.common.data.controller.dto.OperationErrorResponse body =
+                        (com.firefly.common.data.controller.dto.OperationErrorResponse) response.getBody();
                     assertThat(body).isNotNull();
-                    assertThat(body.get("error")).asString().contains("does not support custom operations");
+                    assertThat(body.getError()).contains("does not support");
+                    assertThat(body.getOperationId()).isEqualTo("any-operation");
+                    assertThat(body.getProviderName()).isEqualTo("Test Provider");
                 })
                 .verifyComplete();
     }
@@ -356,10 +369,38 @@ class AbstractDataEnricherControllerTest {
     }
 
     /**
-     * Test enricher that implements ProviderOperationCatalog.
+     * Test enricher with operations - extends TypedDataEnricher to support operations.
      */
-    private static class TestEnricherWithOperations implements DataEnricher, ProviderOperationCatalog, EndpointAware {
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static class TestEnricherWithOperations
+            extends TypedDataEnricher<Map<String, Object>, Map<String, Object>, Map<String, Object>> {
+
         private String endpoint = "/api/v1/test/enrich";
+        private final List<com.firefly.common.data.operation.ProviderOperation<?, ?>> operations;
+
+        public TestEnricherWithOperations() {
+            // Call parent constructor with null dependencies (acceptable for tests)
+            super(null, null, null, null, (Class) Map.class);
+
+            // Create and initialize operations
+            TestSearchOperation searchOp = new TestSearchOperation();
+            TestValidateOperation validateOp = new TestValidateOperation();
+
+            // Set dependencies manually (normally done by Spring)
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.firefly.common.data.operation.schema.JsonSchemaGenerator schemaGen =
+                new com.firefly.common.data.operation.schema.JsonSchemaGenerator(mapper);
+
+            searchOp.setSchemaGenerator(schemaGen);
+            searchOp.setObjectMapper(mapper);
+            searchOp.initializeMetadata();
+
+            validateOp.setSchemaGenerator(schemaGen);
+            validateOp.setObjectMapper(mapper);
+            validateOp.initializeMetadata();
+
+            this.operations = List.of(searchOp, validateOp);
+        }
 
         @Override
         public String getProviderName() {
@@ -387,46 +428,57 @@ class AbstractDataEnricherControllerTest {
         }
 
         @Override
-        public Mono<EnrichmentResponse> enrich(EnrichmentRequest request) {
-            return Mono.just(EnrichmentResponse.builder()
-                .success(true)
-                .providerName(getProviderName())
-                .enrichmentType(request.getEnrichmentType())
-                .strategy(request.getStrategy())
-                .enrichedData(Map.of("test", "data"))
+        public List<com.firefly.common.data.operation.ProviderOperation<?, ?>> getOperations() {
+            return operations;
+        }
+
+        @Override
+        protected Mono<Map<String, Object>> fetchProviderData(EnrichmentRequest request) {
+            return Mono.just(Map.of("test", "data"));
+        }
+
+        @Override
+        protected Map<String, Object> mapToTarget(Map<String, Object> providerData) {
+            return providerData;
+        }
+    }
+
+    /**
+     * Test search operation.
+     */
+    @com.firefly.common.data.operation.ProviderCustomOperation(
+        operationId = "search-company",
+        description = "Search for a company",
+        method = RequestMethod.GET
+    )
+    private static class TestSearchOperation
+            extends com.firefly.common.data.operation.AbstractProviderOperation<CompanySearchRequest, CompanySearchResponse> {
+
+        @Override
+        protected Mono<CompanySearchResponse> doExecute(CompanySearchRequest request) {
+            return Mono.just(CompanySearchResponse.builder()
+                .providerId("PROV-123")
+                .companyName(request.getCompanyName() != null ? request.getCompanyName().toUpperCase() : "UNKNOWN")
+                .taxId(request.getTaxId())
+                .confidence(0.95)
                 .build());
         }
+    }
+
+    /**
+     * Test validate operation.
+     */
+    @com.firefly.common.data.operation.ProviderCustomOperation(
+        operationId = "validate-id",
+        description = "Validate an ID",
+        method = RequestMethod.POST
+    )
+    private static class TestValidateOperation
+            extends com.firefly.common.data.operation.AbstractProviderOperation<Map<String, Object>, Map<String, Object>> {
 
         @Override
-        public List<ProviderOperation> getOperationCatalog() {
-            return List.of(
-                ProviderOperation.builder()
-                    .operationId("search-company")
-                    .path("/search-company")
-                    .method(RequestMethod.GET)
-                    .description("Search for a company")
-                    .build(),
-                ProviderOperation.builder()
-                    .operationId("validate-id")
-                    .path("/validate-id")
-                    .method(RequestMethod.POST)
-                    .description("Validate an ID")
-                    .build()
-            );
-        }
-
-        @Override
-        public Mono<Map<String, Object>> executeOperation(String operationId, Map<String, Object> parameters) {
-            return switch (operationId) {
-                case "search-company" -> Mono.just(Map.of(
-                    "result", "found",
-                    "companyName", parameters.get("companyName")
-                ));
-                case "validate-id" -> Mono.just(Map.of(
-                    "valid", true
-                ));
-                default -> Mono.error(new IllegalArgumentException("Unknown operation: " + operationId));
-            };
+        protected Mono<Map<String, Object>> doExecute(Map<String, Object> request) {
+            return Mono.just(Map.of("valid", true));
         }
     }
 }

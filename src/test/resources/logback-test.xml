@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Simple console appender for tests - NO JSON -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level [%15.15t] %-40.40logger{39} : %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Root logger -->
+    <root level="WARN">
+        <appender-ref ref="CONSOLE" />
+    </root>
+
+    <!-- Application loggers - Keep only essential INFO messages -->
+    <logger name="com.firefly.common.webhooks.web.controllers" level="INFO" />
+    <logger name="com.firefly.common.webhooks.core.services" level="INFO" />
+
+    <!-- Suppress expected error logs in tests (signature validation failures, etc.) -->
+    <logger name="com.firefly.common.webhooks.processor.listener" level="OFF" />
+    <logger name="com.firefly.common.webhooks.integration.services" level="OFF" />
+    <logger name="com.firefly.common.eda.listener" level="OFF" />
+
+    <logger name="com.firefly.common.webhooks" level="WARN" />
+    <logger name="com.firefly.common.eda" level="ERROR" />
+    <logger name="com.firefly.common.cache" level="ERROR" />
+    <logger name="com.firefly.common.eventsourcing" level="ERROR" />
+
+    <!-- lib-common-data loggers -->
+    <!-- Suppress expected validation errors in tests -->
+    <logger name="com.firefly.common.data.operation.AbstractProviderOperation" level="OFF" />
+    <logger name="com.firefly.common.data.enrichment.EnrichmentRequestValidator" level="OFF" />
+    <logger name="com.firefly.common.data.service.AbstractResilientDataEnricher" level="OFF" />
+    <logger name="com.firefly.common.data.service.AbstractResilientSyncDataJobService" level="OFF" />
+    <logger name="com.firefly.common.data.service.AbstractResilientDataJobService" level="OFF" />
+    <logger name="com.firefly.common.data.controller.AbstractDataJobController" level="OFF" />
+    <logger name="com.firefly.common.data.controller.AbstractSyncDataJobController" level="OFF" />
+    <logger name="com.firefly.common.data.controller.AbstractDataEnricherController" level="OFF" />
+    <logger name="com.firefly.common.data.stepevents.StepEventPublisherBridge" level="OFF" />
+    <logger name="com.firefly.common.data.service.TypedDataEnricher" level="OFF" />
+    <logger name="com.firefly.common.data.service.DataEnricherRegistry" level="OFF" />
+    <logger name="com.firefly.common.data.service.DataJobDiscoveryService" level="OFF" />
+    <logger name="com.firefly.common.data.observability.JobTracingService" level="OFF" />
+    <logger name="com.firefly.common.data.mapper.JobResultMapperRegistry" level="OFF" />
+
+    <!-- Keep INFO level for important business logic -->
+    <logger name="com.firefly.common.data" level="WARN" />
+    
+    <!-- Third-party loggers -->
+    <logger name="org.apache.kafka" level="ERROR" />
+    <logger name="org.testcontainers" level="WARN" />
+    <logger name="org.springframework" level="WARN" />
+    <logger name="io.lettuce" level="ERROR" />
+    <logger name="reactor.netty" level="ERROR" />
+</configuration>
+
