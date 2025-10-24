@@ -27,22 +27,13 @@ class ProviderOperationTest {
         objectMapper = new ObjectMapper();
         schemaGenerator = new JsonSchemaGenerator(objectMapper);
         operation = new SearchCompanyOperation();
-        
+
         // Manually inject dependencies (since we're not using Spring context in this test)
-        try {
-            var schemaGeneratorField = AbstractProviderOperation.class.getDeclaredField("schemaGenerator");
-            schemaGeneratorField.setAccessible(true);
-            schemaGeneratorField.set(operation, schemaGenerator);
-            
-            var objectMapperField = AbstractProviderOperation.class.getDeclaredField("objectMapper");
-            objectMapperField.setAccessible(true);
-            objectMapperField.set(operation, objectMapper);
-            
-            // Initialize metadata
-            operation.initializeMetadata();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to initialize operation", e);
-        }
+        operation.setSchemaGenerator(schemaGenerator);
+        operation.setObjectMapper(objectMapper);
+
+        // Initialize metadata
+        operation.initializeMetadata();
     }
 
     @Test
