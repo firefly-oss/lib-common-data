@@ -679,8 +679,12 @@ public class CustomerDataJobService extends AbstractResilientDataJobService {
             JobTracingService tracingService,
             JobMetricsService metricsService,
             ResiliencyDecoratorService resiliencyService,
+            JobEventPublisher eventPublisher,
+            JobAuditService auditService,
+            JobExecutionResultService resultService,
             JobOrchestrator jobOrchestrator) {
-        super(tracingService, metricsService, resiliencyService);
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
         this.jobOrchestrator = jobOrchestrator;
     }
 
@@ -772,8 +776,12 @@ public class OrderDataJobService extends AbstractResilientDataJobService {
             JobTracingService tracingService,
             JobMetricsService metricsService,
             ResiliencyDecoratorService resiliencyService,
+            JobEventPublisher eventPublisher,
+            JobAuditService auditService,
+            JobExecutionResultService resultService,
             JobOrchestrator jobOrchestrator) {
-        super(tracingService, metricsService, resiliencyService);
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
         this.jobOrchestrator = jobOrchestrator;
     }
 
@@ -861,8 +869,12 @@ public class AnalyticsDataJobService extends AbstractResilientDataJobService {
             JobTracingService tracingService,
             JobMetricsService metricsService,
             ResiliencyDecoratorService resiliencyService,
+            JobEventPublisher eventPublisher,
+            JobAuditService auditService,
+            JobExecutionResultService resultService,
             JobOrchestrator jobOrchestrator) {
-        super(tracingService, metricsService, resiliencyService);
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
         this.jobOrchestrator = jobOrchestrator;
     }
 
@@ -1362,8 +1374,12 @@ public class BatchDataJobService extends AbstractResilientDataJobService {
             JobTracingService tracingService,
             JobMetricsService metricsService,
             ResiliencyDecoratorService resiliencyService,
+            JobEventPublisher eventPublisher,
+            JobAuditService auditService,
+            JobExecutionResultService resultService,
             @Qualifier("batchOrchestrator") JobOrchestrator batchOrchestrator) {
-        super(tracingService, metricsService, resiliencyService);
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
         this.batchOrchestrator = batchOrchestrator;
     }
 
@@ -1393,8 +1409,12 @@ public class RealtimeDataJobService extends AbstractResilientDataJobService {
             JobTracingService tracingService,
             JobMetricsService metricsService,
             ResiliencyDecoratorService resiliencyService,
+            JobEventPublisher eventPublisher,
+            JobAuditService auditService,
+            JobExecutionResultService resultService,
             @Qualifier("realtimeOrchestrator") JobOrchestrator realtimeOrchestrator) {
-        super(tracingService, metricsService, resiliencyService);
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
         this.realtimeOrchestrator = realtimeOrchestrator;
     }
 

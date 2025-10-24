@@ -1,15 +1,21 @@
 # Getting Started
 
-This guide will walk you through setting up and using the `lib-common-data` library in your microservice for both **Data Jobs** (orchestrated workflows) and **Data Enrichment** (third-party provider integration).
+This guide will walk you through setting up and using the `lib-common-data` library in your microservice.
+
+The library provides two main capabilities:
+
+1. **Data Jobs** - For orchestrated workflows (async multi-stage or sync single-stage)
+2. **Data Enrichers** - For integrating with third-party data providers
+
+Choose the guide that matches your use case, or implement both in the same microservice!
 
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
-- [Basic Setup - Data Jobs](#basic-setup---data-jobs)
-- [Basic Setup - Data Enrichment](#basic-setup---data-enrichment)
-- [Complete Example - Data Jobs](#complete-example---data-jobs)
-- [Complete Example - Data Enrichment](#complete-example---data-enrichment)
+- [Guide 1: Data Jobs (Asynchronous)](#guide-1-data-jobs-asynchronous)
+- [Guide 2: Data Jobs (Synchronous)](#guide-2-data-jobs-synchronous)
+- [Guide 3: Data Enrichers](#guide-3-data-enrichers)
 - [Running the Application](#running-the-application)
 - [Testing Your Implementation](#testing-your-implementation)
 - [Next Steps](#next-steps)
@@ -18,25 +24,19 @@ This guide will walk you through setting up and using the `lib-common-data` libr
 
 ## Prerequisites
 
-Before you begin, ensure you have:
+**Required for all use cases:**
+- Java 21+ installed
+- Maven 3.8+ or Gradle 7+
+- Spring Boot 3.x knowledge
+- Reactive programming familiarity (Project Reactor)
 
-- **Java 17+** installed
-- **Maven 3.8+** or Gradle 7+
-- **Spring Boot 3.x** knowledge
-- **Reactive programming** familiarity (Project Reactor)
+**Additional requirements by use case:**
 
-### For Data Jobs
-
-- Access to an **orchestrator** (Apache Airflow, AWS Step Functions, or mock for development)
-- **Kafka** or **RabbitMQ** (optional, for event publishing)
-- **Apache Airflow** instance (if using Airflow orchestrator)
-- **AWS credentials** (if using AWS Step Functions orchestrator)
-
-### For Data Enrichment
-
-- Access to **third-party provider APIs** (financial data, credit bureaus, etc.)
-- **API credentials** for the providers you want to integrate
-- **lib-common-client** dependency (automatically included with lib-common-data)
+| Use Case | Additional Requirements |
+|----------|------------------------|
+| **Async Data Jobs** | Access to orchestrator (Apache Airflow, AWS Step Functions, or mock for dev) |
+| **Sync Data Jobs** | None (all included in lib-common-data) |
+| **Data Enrichers** | Access to third-party provider APIs + API credentials |
 
 ---
 
@@ -157,9 +157,30 @@ logging:
 
 ---
 
-## Basic Setup - Data Jobs
+## Guide 1: Data Jobs (Asynchronous)
 
-### Step 1: Create Domain Models
+**Use this guide if you need to:**
+- Execute long-running workflows (> 30 seconds)
+- Integrate with orchestrators (AWS Step Functions, Apache Airflow)
+- Process large datasets with multiple stages (START → CHECK → COLLECT → RESULT)
+
+### Step 1: Configure Application
+
+Add to `application.yml`:
+
+```yaml
+firefly:
+  data:
+    orchestration:
+      enabled: true
+      orchestrator-type: APACHE_AIRFLOW  # or AWS_STEP_FUNCTIONS
+      airflow:
+        base-url: http://localhost:8080
+        username: airflow
+        password: airflow
+```
+
+### Step 2: Create Domain Models
 
 Define your DTOs for job results:
 
@@ -181,7 +202,7 @@ public class CustomerDataDTO {
 }
 ```
 
-### Step 2: Implement JobOrchestrator Adapter
+### Step 3: Implement JobOrchestrator Adapter
 
 > **Important**: The library provides the `JobOrchestrator` interface, but you must implement the adapter for your chosen orchestrator.
 
@@ -293,7 +314,7 @@ public class MockJobOrchestrator implements JobOrchestrator {
 > - **AWS Step Functions**: Use AWS SDK to start executions and describe execution status
 > - See [Configuration Guide](configuration.md) for orchestrator-specific settings
 
-### Step 3: Create MapStruct Mapper
+### Step 4: Create MapStruct Mapper
 
 Create a mapper to transform raw job results to your DTO:
 
@@ -309,7 +330,7 @@ import java.util.Map;
 
 @Mapper(componentModel = "spring")
 public interface CustomerDataMapper extends JobResultMapper<Map<String, Object>, CustomerDataDTO> {
-    
+
     @Override
     @Mapping(source = "customer_id", target = "customerId")
     @Mapping(source = "first_name", target = "firstName")
@@ -318,7 +339,7 @@ public interface CustomerDataMapper extends JobResultMapper<Map<String, Object>,
     @Mapping(source = "phone", target = "phoneNumber")
     @Mapping(source = "mailing_address", target = "address")
     CustomerDataDTO mapToTarget(Map<String, Object> source);
-    
+
     @Override
     default Class<CustomerDataDTO> getTargetType() {
         return CustomerDataDTO.class;
@@ -326,7 +347,7 @@ public interface CustomerDataMapper extends JobResultMapper<Map<String, Object>,
 }
 ```
 
-### Step 4: Implement DataJobService
+### Step 5: Implement DataJobService
 
 > **💡 Recommended Approach**: Use `AbstractResilientDataJobService` for automatic observability, resiliency, and persistence features.
 >
@@ -358,8 +379,12 @@ public class CustomerDataJobService extends AbstractResilientDataJobService {
             JobTracingService tracingService,
             JobMetricsService metricsService,
             ResiliencyDecoratorService resiliencyService,
+            JobEventPublisher eventPublisher,
+            JobAuditService auditService,
+            JobExecutionResultService resultService,
             JobOrchestrator jobOrchestrator) {
-        super(tracingService, metricsService, resiliencyService);
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
         this.jobOrchestrator = jobOrchestrator;
     }
 
@@ -607,9 +632,187 @@ public class CustomerDataJobController extends AbstractDataJobController {
 
 ---
 
-## Basic Setup - Data Enrichment
+## Guide 2: Data Jobs (Synchronous)
 
-### Step 1: Create Domain Models
+**Use this guide if you need to:**
+- Execute quick operations (< 30 seconds)
+- Return results immediately without orchestration
+- Validate data, perform lookups, or run simple transformations
+
+### Step 1: Configure Application
+
+Add to `application.yml`:
+
+```yaml
+firefly:
+  data:
+    orchestration:
+      enabled: true  # Enables resiliency features
+```
+
+### Step 2: Implement SyncDataJobService
+
+Extend `AbstractResilientSyncDataJobService` for automatic observability and resiliency:
+
+```java
+package com.example.myservice.service;
+
+import com.firefly.common.data.event.JobEventPublisher;
+import com.firefly.common.data.model.JobStageRequest;
+import com.firefly.common.data.model.JobStageResponse;
+import com.firefly.common.data.observability.JobMetricsService;
+import com.firefly.common.data.observability.JobTracingService;
+import com.firefly.common.data.persistence.service.JobAuditService;
+import com.firefly.common.data.persistence.service.JobExecutionResultService;
+import com.firefly.common.data.resiliency.ResiliencyDecoratorService;
+import com.firefly.common.data.service.AbstractResilientSyncDataJobService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
+
+import java.util.Map;
+
+@Service
+@Slf4j
+public class CustomerValidationSyncJob extends AbstractResilientSyncDataJobService {
+
+    private final ValidationService validationService;
+
+    public CustomerValidationSyncJob(
+            JobTracingService tracingService,
+            JobMetricsService metricsService,
+            ResiliencyDecoratorService resiliencyService,
+            JobEventPublisher eventPublisher,
+            JobAuditService auditService,
+            JobExecutionResultService resultService,
+            ValidationService validationService) {
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
+        this.validationService = validationService;
+    }
+
+    @Override
+    protected Mono<JobStageResponse> doExecute(JobStageRequest request) {
+        String customerId = (String) request.getParameters().get("customerId");
+
+        log.info("Validating customer: {}", customerId);
+
+        return validationService.validateCustomer(customerId)
+            .map(validationResult -> JobStageResponse.builder()
+                .success(true)
+                .executionId(request.getExecutionId())
+                .data(Map.of("validationResult", validationResult))
+                .message("Customer validation completed successfully")
+                .build())
+            .onErrorResume(error -> {
+                log.error("Validation failed for customer: {}", customerId, error);
+                return Mono.just(JobStageResponse.builder()
+                    .success(false)
+                    .executionId(request.getExecutionId())
+                    .error("Validation failed: " + error.getMessage())
+                    .message("Customer validation failed")
+                    .build());
+            });
+    }
+
+    @Override
+    protected String getJobName() {
+        return "CustomerValidationJob";
+    }
+
+    @Override
+    protected String getJobDescription() {
+        return "Validates customer data synchronously";
+    }
+}
+```
+
+### Step 3: Implement Controller
+
+Extend `AbstractSyncDataJobController`:
+
+```java
+package com.example.myservice.controller;
+
+import com.firefly.common.data.controller.AbstractSyncDataJobController;
+import com.firefly.common.data.service.SyncDataJobService;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/v1/customer-validation")
+@Tag(name = "Sync Job - Customer Validation")
+public class CustomerValidationController extends AbstractSyncDataJobController {
+
+    public CustomerValidationController(SyncDataJobService syncJobService) {
+        super(syncJobService);
+    }
+
+    // That's it! Endpoint is automatically exposed:
+    // POST /api/v1/customer-validation/execute
+}
+```
+
+### Step 4: Test Your Sync Job
+
+```bash
+curl -X POST http://localhost:8080/api/v1/customer-validation/execute \
+  -H "Content-Type: application/json" \
+  -d '{
+    "parameters": {
+      "customerId": "CUST-12345"
+    },
+    "requestId": "req-001",
+    "initiator": "api-user"
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Customer validation completed successfully",
+  "data": {
+    "customerId": "CUST-12345",
+    "valid": true,
+    "validationErrors": []
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**See [Synchronous Jobs Guide](sync-jobs.md) for complete documentation.**
+
+---
+
+## Guide 3: Data Enrichers
+
+**Use this guide if you need to:**
+- Integrate with third-party data providers (credit bureaus, financial data, business intelligence)
+- Enrich your application data with external information
+- Expose provider-specific operations (search, validate, lookup)
+
+### Step 1: Configure Application
+
+Add to `application.yml`:
+
+```yaml
+firefly:
+  data:
+    enrichment:
+      enabled: true
+      publish-events: true
+      default-timeout-seconds: 30
+
+# Provider-specific configuration
+credit:
+  bureau:
+    base-url: https://api.credit-bureau-provider.com
+    api-key: ${CREDIT_BUREAU_API_KEY}
+```
+
+### Step 2: Create Domain Models
 
 Define your DTOs for enrichment:
 
@@ -651,7 +854,7 @@ public class FinancialDataResponse {
 }
 ```
 
-### Step 2: Implement Data Enricher
+### Step 3: Implement Data Enricher
 
 > **💡 Recommended Approach**: Use `TypedDataEnricher` for automatic strategy application and 67% less code.
 
@@ -762,7 +965,119 @@ public class FinancialDataEnricher
 - ✅ Event publishing for enrichment lifecycle events
 - ✅ Comprehensive logging for all enrichment phases
 
-### Step 3: Implement Data Enricher Controller
+### Step 4: Add Provider-Specific Custom Operations (Optional but Recommended)
+
+Many providers require auxiliary operations before enrichment (search for IDs, validate identifiers, etc.). Create operation classes with `@ProviderCustomOperation` annotation:
+
+```java
+package com.example.myservice.enricher.operation;
+
+import com.firefly.common.data.operation.AbstractProviderOperation;
+import com.firefly.common.data.operation.ProviderCustomOperation;
+import org.springframework.web.bind.annotation.RequestMethod;
+import reactor.core.publisher.Mono;
+
+// Step 1: Define DTOs
+public record CompanySearchRequest(
+    String companyName,
+    String taxId,
+    Double minConfidence
+) {}
+
+public record CompanySearchResponse(
+    String providerId,
+    String companyName,
+    String taxId,
+    Double confidence
+) {}
+
+// Step 2: Create operation class
+@ProviderCustomOperation(
+    operationId = "search-company",
+    description = "Search for a company by name or tax ID to obtain provider internal ID",
+    method = RequestMethod.POST,
+    tags = {"lookup", "search"}
+)
+public class SearchCompanyOperation
+        extends AbstractProviderOperation<CompanySearchRequest, CompanySearchResponse> {
+
+    private final RestClient bureauClient;
+
+    public SearchCompanyOperation(RestClient bureauClient) {
+        this.bureauClient = bureauClient;
+    }
+
+    @Override
+    protected Mono<CompanySearchResponse> doExecute(CompanySearchRequest request) {
+        return bureauClient.post("/search", CompanySearchResponse.class)
+            .withBody(request)
+            .execute();
+    }
+
+    @Override
+    protected void validateRequest(CompanySearchRequest request) {
+        if (request.companyName() == null && request.taxId() == null) {
+            throw new IllegalArgumentException("Either companyName or taxId must be provided");
+        }
+    }
+}
+
+// Step 3: Register in enricher
+@Service
+public class CreditBureauEnricher
+        extends TypedDataEnricher<CreditReportDTO, CreditBureauReportResponse, CreditReportDTO> {
+
+    private final SearchCompanyOperation searchCompanyOperation;
+    private final ValidateTaxIdOperation validateTaxIdOperation;
+
+    public CreditBureauEnricher(
+            RestClient bureauClient,
+            SearchCompanyOperation searchCompanyOperation,
+            ValidateTaxIdOperation validateTaxIdOperation) {
+        this.bureauClient = bureauClient;
+        this.searchCompanyOperation = searchCompanyOperation;
+        this.validateTaxIdOperation = validateTaxIdOperation;
+    }
+
+    @Override
+    public List<ProviderOperation<?, ?>> getOperations() {
+        return List.of(searchCompanyOperation, validateTaxIdOperation);
+    }
+
+    // ... enrichment methods ...
+}
+```
+
+**What You Get Automatically:**
+- ✅ **REST Endpoints** - `POST /api/v1/enrichment/credit-bureau/operation/search-company`
+- ✅ **JSON Schema Generation** - Request/response schemas auto-generated from DTOs
+- ✅ **Type Safety** - Compile-time type checking
+- ✅ **Validation** - Automatic request validation
+- ✅ **Discovery** - `GET /api/v1/enrichment/credit-bureau/operations` lists all operations with schemas
+- ✅ **OpenAPI Docs** - Full Swagger documentation
+
+**Typical Workflow:**
+```bash
+# Step 1: Search for company to get provider's internal ID
+POST /api/v1/enrichment/credit-bureau/operation/search-company
+{
+  "companyName": "Acme Corp",
+  "taxId": "TAX-123",
+  "minConfidence": 0.8
+}
+→ Returns: {"providerId": "PROV-12345", "companyName": "ACME CORP", "taxId": "TAX-123", "confidence": 0.95}
+
+# Step 2: Enrich data using the provider ID
+POST /api/v1/enrichment/credit-bureau/enrich
+{
+  "enrichmentType": "credit-report",
+  "strategy": "ENHANCE",
+  "sourceDto": {"companyId": "123", "name": "Acme Corp"},
+  "parameters": {"providerId": "PROV-12345"}
+}
+```
+
+### Step 5: Implement Data Enricher Controller
 
 > **💡 Recommended Approach**: Use `AbstractDataEnricherController` for automatic comprehensive logging.
 

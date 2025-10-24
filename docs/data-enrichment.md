@@ -210,14 +210,16 @@ Data enrichment combines your partial data with complete data from third-party p
 
 Each strategy determines how the framework merges your source data with provider data:
 
-| Strategy | Behavior | Implementation | Use Case |
-|----------|----------|----------------|----------|
-| **ENHANCE** | Fills only null/empty fields from provider. Preserves all existing source data. | 1. Calls `mapToTarget(providerData)`<br>2. Merges keeping source values where they exist | You have some data and want to fill in the gaps without overwriting existing values |
-| **MERGE** | Combines source + provider data. Provider wins conflicts. | 1. Calls `mapToTarget(providerData)`<br>2. Merges with provider values taking precedence | You want the most up-to-date data from provider, overwriting stale source data |
-| **REPLACE** | Uses only provider data. Ignores source completely. | 1. Calls `mapToTarget(providerData)`<br>2. Returns mapped data, ignores source | You want completely fresh data, don't trust source at all |
-| **RAW** | Returns provider data as-is without mapping | 1. **Skips** `mapToTarget()`<br>2. Returns raw provider response directly | You need the raw provider response format for debugging or custom processing |
+| Strategy | Source DTO | Calls `mapToTarget()`? | Return Type | Behavior | Use Case |
+|----------|------------|------------------------|-------------|----------|----------|
+| **ENHANCE** | ✅ Used | ✅ YES | Your DTO | Fills only null/empty fields. Preserves existing source data. | Fill gaps without overwriting |
+| **MERGE** | ✅ Used | ✅ YES | Your DTO | Combines source + provider. Provider wins conflicts. | Update stale data with fresh provider data |
+| **REPLACE** | ❌ Ignored | ✅ YES | Your DTO | Uses only provider data. **Transforms** to your DTO format. | Fresh data in **your format** |
+| **RAW** | ❌ Ignored | ❌ NO | Provider's format | Returns provider data as-is. **No transformation**. | Fresh data in **provider's format** |
 
-**Important:** The RAW strategy is special - it's the only strategy that skips the `mapToTarget()` step and returns the provider's response format directly.
+**🔑 Key Difference - REPLACE vs RAW:**
+- **REPLACE**: Ignores source, **transforms** provider data → returns `CompanyDTO` with field mapping (`businessName` → `name`)
+- **RAW**: Ignores source, **no transformation** → returns `Map<String, Object>` with original field names (`businessName`)
 
 ---
 
@@ -450,29 +452,216 @@ Combine existing DTO with provider data, with provider data taking precedence.
 - Refreshing cached data
 
 #### 3. REPLACE
-Replace the entire DTO with provider response data.
+Replace the entire DTO with provider response data. **Transforms** provider data to your DTO format.
 
 ```java
-// Before: { name: "Acme Corp", address: "Old Address" }
-// After:  { name: "Acme Corporation Inc", address: "123 Main St", revenue: 1000000, ... }
+// Source DTO (IGNORED):
+CompanyDTO source = { name: "Acme Corp", address: "Old Address" }
+
+// Provider returns (raw format):
+Map<String, Object> providerData = {
+  "businessName": "Acme Corporation Inc",
+  "streetAddress": "123 Main St",
+  "revenue": 1000000
+}
+
+// After REPLACE (TRANSFORMED to CompanyDTO):
+CompanyDTO result = {
+  name: "Acme Corporation Inc",      // ← Mapped from "businessName"
+  address: "123 Main St",            // ← Mapped from "streetAddress"
+  revenue: 1000000
+}
+
+// Return type: CompanyDTO (your DTO class)
 ```
+
+**Key Points:**
+- ✅ **Calls `mapToTarget()`** to transform provider data to your DTO
+- ✅ **Returns typed DTO** (e.g., `CompanyDTO`)
+- ❌ **Ignores source DTO** completely
+- 🔄 **Field mapping applied** (e.g., `businessName` → `name`)
 
 **Use Cases:**
 - Fetching complete data from provider using only an identifier
 - Refreshing all data from authoritative source
 - Initial data population
+- When you want a **typed DTO** with all provider data
+
+---
 
 #### 4. RAW
-Return the raw provider response without transformation.
+Return the raw provider response **without any transformation**. No mapping, no DTO conversion.
 
 ```java
-// Returns: Map<String, Object> or provider-specific object
+// Source DTO (IGNORED):
+CompanyDTO source = { name: "Acme Corp", address: "Old Address" }
+
+// Provider returns (raw format):
+Map<String, Object> providerData = {
+  "businessName": "Acme Corporation Inc",
+  "streetAddress": "123 Main St",
+  "revenue": 1000000
+}
+
+// After RAW (NO TRANSFORMATION):
+Map<String, Object> result = {
+  "businessName": "Acme Corporation Inc",  // ← Still "businessName" (NOT "name")
+  "streetAddress": "123 Main St",          // ← Still "streetAddress" (NOT "address")
+  "revenue": 1000000
+}
+
+// Return type: Map<String, Object> (provider's raw format)
 ```
 
+**Key Points:**
+- ❌ **Skips `mapToTarget()`** - no transformation at all
+- ✅ **Returns raw provider data** (e.g., `Map<String, Object>`)
+- ❌ **Ignores source DTO** completely
+- ❌ **No field mapping** - provider field names preserved
+
 **Use Cases:**
-- Custom processing of provider data
-- Debugging provider responses
-- Storing raw provider data for audit purposes
+- Debugging provider responses (see exactly what they returned)
+- Storing raw provider data for audit/compliance
+- Custom processing when you need provider's original format
+- When provider returns data that doesn't fit your DTO structure
+
+---
+
+### 🔍 **REPLACE vs RAW - Key Difference**
+
+**Both ignore the source DTO, but they differ in transformation:**
+
+| Aspect | **REPLACE** | **RAW** |
+|--------|-------------|---------|
+| **Calls `mapToTarget()`?** | ✅ YES | ❌ NO |
+| **Return Type** | Your DTO (e.g., `CompanyDTO`) | Provider's format (e.g., `Map<String, Object>`) |
+| **Field Names** | Your field names (e.g., `name`) | Provider's field names (e.g., `businessName`) |
+| **Type Safety** | ✅ Strongly typed | ⚠️ Untyped (Object/Map) |
+| **Use When** | You want fresh data in **your format** | You want fresh data in **provider's format** |
+
+**Example:**
+
+```java
+// Provider returns:
+{ "businessName": "Acme Corp", "employeeCount": 500 }
+
+// REPLACE returns:
+CompanyDTO { name: "Acme Corp", employeeCount: 500 }  // ← "businessName" mapped to "name"
+
+// RAW returns:
+Map { "businessName": "Acme Corp", "employeeCount": 500 }  // ← Original field names
+```
+
+---
+
+### 📊 **Strategy Flow Diagrams**
+
+#### ENHANCE Strategy Flow
+
+```mermaid
+graph LR
+    A[Source DTO<br/>name: Acme Corp<br/>address: null] --> B[fetchProviderData]
+    B --> C[Provider Response<br/>businessName: Acme Corp<br/>streetAddress: 123 Main St]
+    C --> D[mapToTarget]
+    D --> E[Mapped DTO<br/>name: Acme Corp<br/>address: 123 Main St]
+    E --> F[ENHANCE Strategy]
+    A --> F
+    F --> G[Result DTO<br/>name: Acme Corp ← from source<br/>address: 123 Main St ← from provider]
+
+    style A fill:#e1f5ff
+    style G fill:#c3f0c3
+    style F fill:#fff4cc
+```
+
+**ENHANCE**: Preserves `name: "Acme Corp"` from source, fills `address` from provider.
+
+---
+
+#### MERGE Strategy Flow
+
+```mermaid
+graph LR
+    A[Source DTO<br/>name: Old Name<br/>address: Old Address] --> B[fetchProviderData]
+    B --> C[Provider Response<br/>businessName: New Name<br/>streetAddress: New Address]
+    C --> D[mapToTarget]
+    D --> E[Mapped DTO<br/>name: New Name<br/>address: New Address]
+    E --> F[MERGE Strategy]
+    A --> F
+    F --> G[Result DTO<br/>name: New Name ← from provider<br/>address: New Address ← from provider]
+
+    style A fill:#e1f5ff
+    style G fill:#c3f0c3
+    style F fill:#fff4cc
+```
+
+**MERGE**: Provider data overwrites source data (provider wins conflicts).
+
+---
+
+#### REPLACE Strategy Flow
+
+```mermaid
+graph LR
+    A[Source DTO<br/>name: Old Name<br/>IGNORED ❌] --> B[fetchProviderData]
+    B --> C[Provider Response<br/>businessName: New Name<br/>streetAddress: 123 Main St]
+    C --> D[mapToTarget ✅]
+    D --> E[Mapped DTO<br/>name: New Name<br/>address: 123 Main St]
+    E --> F[REPLACE Strategy]
+    F --> G[Result: CompanyDTO<br/>name: New Name<br/>address: 123 Main St<br/>Type: CompanyDTO ✅]
+
+    style A fill:#ffcccc,stroke-dasharray: 5 5
+    style G fill:#c3f0c3
+    style F fill:#fff4cc
+    style D fill:#ccf0ff
+```
+
+**REPLACE**: Ignores source, **transforms** provider data to `CompanyDTO` (field mapping applied).
+
+---
+
+#### RAW Strategy Flow
+
+```mermaid
+graph LR
+    A[Source DTO<br/>name: Old Name<br/>IGNORED ❌] --> B[fetchProviderData]
+    B --> C[Provider Response<br/>businessName: New Name<br/>streetAddress: 123 Main St]
+    C --> D[mapToTarget<br/>SKIPPED ❌]
+    D --> E[RAW Strategy]
+    C --> E
+    E --> F[Result: Map<br/>businessName: New Name<br/>streetAddress: 123 Main St<br/>Type: Map ⚠️]
+
+    style A fill:#ffcccc,stroke-dasharray: 5 5
+    style F fill:#fff4cc
+    style E fill:#fff4cc
+    style D fill:#ffcccc,stroke-dasharray: 5 5
+```
+
+**RAW**: Ignores source, **skips transformation**, returns provider's raw format (no field mapping).
+
+---
+
+### 🎯 **When to Use Each Strategy**
+
+```mermaid
+graph TD
+    A[Need to enrich data?] --> B{Have existing<br/>source data?}
+    B -->|Yes| C{Trust source<br/>data?}
+    B -->|No| D{Need typed DTO?}
+
+    C -->|Partially| E{Provider has<br/>newer data?}
+    C -->|No| F[REPLACE<br/>Fresh data, your format]
+
+    E -->|Yes| G[MERGE<br/>Provider wins conflicts]
+    E -->|No| H[ENHANCE<br/>Fill only nulls]
+
+    D -->|Yes| F
+    D -->|No| I[RAW<br/>Provider's raw format]
+
+    style H fill:#c3f0c3
+    style G fill:#c3f0c3
+    style F fill:#c3f0c3
+    style I fill:#fff4cc
+```
 
 ### Models
 
@@ -899,46 +1088,48 @@ package com.firefly.enricher.creditbureau;
 
 import com.firefly.common.client.ServiceClient;
 import com.firefly.common.client.rest.RestClient;
-import com.firefly.common.data.controller.ProviderOperation;
-import com.firefly.common.data.controller.ProviderOperationCatalog;
 import com.firefly.common.data.event.EnrichmentEventPublisher;
 import com.firefly.common.data.model.EnrichmentRequest;
 import com.firefly.common.data.observability.JobMetricsService;
 import com.firefly.common.data.observability.JobTracingService;
+import com.firefly.common.data.operation.ProviderOperation;
 import com.firefly.common.data.resiliency.ResiliencyDecoratorService;
 import com.firefly.common.data.service.TypedDataEnricher;
 import com.firefly.customer.dto.CreditReportDTO;
 import com.firefly.enricher.creditbureau.dto.CreditBureauReportResponse;
-import com.firefly.enricher.creditbureau.dto.CompanySearchResponse;
+import com.firefly.enricher.creditbureau.operation.SearchCompanyOperation;
+import com.firefly.enricher.creditbureau.operation.ValidateTaxIdOperation;
+import com.firefly.enricher.creditbureau.operation.GetCreditScoreOperation;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.RequestMethod;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Professional credit bureau report enricher.
  *
  * <p>This enricher demonstrates all best practices:</p>
  * <ul>
- *   <li>Provider-specific operations for ID lookup</li>
+ *   <li>Provider-specific custom operations for ID lookup</li>
  *   <li>Comprehensive error handling</li>
  *   <li>Automatic observability and resiliency</li>
  *   <li>Clean separation of concerns</li>
  *   <li>Proper validation</li>
+ *   <li>Type-safe operations with JSON Schema generation</li>
  * </ul>
  */
 @Slf4j
 @Service
 public class CreditBureauEnricher
-        extends TypedDataEnricher<CreditReportDTO, CreditBureauReportResponse, CreditReportDTO>
-        implements ProviderOperationCatalog {
+        extends TypedDataEnricher<CreditReportDTO, CreditBureauReportResponse, CreditReportDTO> {
 
     private final RestClient bureauClient;
+    private final SearchCompanyOperation searchCompanyOperation;
+    private final ValidateTaxIdOperation validateTaxIdOperation;
+    private final GetCreditScoreOperation getCreditScoreOperation;
 
     @Value("${credit.bureau.api.key}")
     private String apiKey;
@@ -948,15 +1139,25 @@ public class CreditBureauEnricher
      *
      * <p>All observability and resiliency services are injected automatically
      * by Spring and passed to the parent class.</p>
+     *
+     * <p>Provider-specific operations are also injected and registered.</p>
      */
     public CreditBureauEnricher(
             JobTracingService tracingService,
             JobMetricsService metricsService,
             ResiliencyDecoratorService resiliencyService,
             EnrichmentEventPublisher eventPublisher,
+            SearchCompanyOperation searchCompanyOperation,
+            ValidateTaxIdOperation validateTaxIdOperation,
+            GetCreditScoreOperation getCreditScoreOperation,
             @Value("${credit.bureau.base-url}") String baseUrl) {
 
         super(tracingService, metricsService, resiliencyService, eventPublisher, CreditReportDTO.class);
+
+        // Store operation references
+        this.searchCompanyOperation = searchCompanyOperation;
+        this.validateTaxIdOperation = validateTaxIdOperation;
+        this.getCreditScoreOperation = getCreditScoreOperation;
 
         // Create REST client using lib-common-client
         this.bureauClient = ServiceClient.rest("credit-bureau")
@@ -966,7 +1167,8 @@ public class CreditBureauEnricher
             .timeout(Duration.ofSeconds(30))
             .build();
 
-        log.info("Initialized Credit Bureau Enricher with base URL: {}", baseUrl);
+        log.info("Initialized Credit Bureau Enricher with base URL: {} and {} operations",
+            baseUrl, getOperations().size());
     }
 
     // ========== CORE ENRICHMENT METHODS ==========
@@ -1043,187 +1245,21 @@ public class CreditBureauEnricher
             .build();
     }
 
-    // ========== PROVIDER-SPECIFIC OPERATIONS ==========
+    // ========== PROVIDER-SPECIFIC CUSTOM OPERATIONS ==========
 
     /**
-     * Declares the catalog of provider-specific operations.
+     * Returns the list of provider-specific operations.
      *
      * <p>These operations are automatically exposed as REST endpoints
-     * and included in the discovery response.</p>
+     * and included in the discovery response with full JSON schemas.</p>
      */
     @Override
-    public List<ProviderOperation> getOperationCatalog() {
+    public List<ProviderOperation<?, ?>> getOperations() {
         return List.of(
-            // Operation 1: Search company by name/tax ID to get provider ID
-            ProviderOperation.builder()
-                .operationId("search-company")
-                .path("/search-company")
-                .method(RequestMethod.GET)
-                .description("Search for a company by name or tax ID to obtain provider internal ID. " +
-                           "This is typically the first step before enrichment.")
-                .requestExample(Map.of(
-                    "companyName", "ACME CORPORATION",
-                    "taxId", "TAX-12345678"
-                ))
-                .responseExample(Map.of(
-                    "providerId", "PROV-12345",
-                    "companyName", "ACME CORPORATION",
-                    "taxId", "TAX-12345678",
-                    "confidence", 0.95,
-                    "active", true
-                ))
-                .tags(new String[]{"lookup", "search", "prerequisite"})
-                .requiresAuth(true)
-                .build(),
-
-            // Operation 2: Validate Tax ID
-            ProviderOperation.builder()
-                .operationId("validate-tax-id")
-                .path("/validate-tax-id")
-                .method(RequestMethod.GET)
-                .description("Validate that a tax ID exists in credit bureau database")
-                .requestExample(Map.of("taxId", "TAX-12345678"))
-                .responseExample(Map.of(
-                    "valid", true,
-                    "providerId", "PROV-12345",
-                    "companyName", "ACME CORPORATION"
-                ))
-                .tags(new String[]{"validation"})
-                .requiresAuth(true)
-                .build(),
-
-            // Operation 3: Get credit score only (quick lookup)
-            ProviderOperation.builder()
-                .operationId("get-credit-score")
-                .path("/credit-score")
-                .method(RequestMethod.POST)
-                .description("Get just the credit score without full enrichment data. " +
-                           "Faster and cheaper than full credit report.")
-                .requestExample(Map.of("providerId", "PROV-12345"))
-                .responseExample(Map.of(
-                    "creditScore", 750,
-                    "creditRating", "AAA",
-                    "riskLevel", "LOW",
-                    "lastUpdated", "2025-10-24"
-                ))
-                .tags(new String[]{"credit", "quick-lookup"})
-                .requiresAuth(true)
-                .build()
+            searchCompanyOperation,
+            validateTaxIdOperation,
+            getCreditScoreOperation
         );
-    }
-
-    /**
-     * Executes provider-specific operations.
-     *
-     * <p>This method is called when clients invoke the operation endpoints.
-     * The framework handles routing, parameter extraction, and response formatting.</p>
-     */
-    @Override
-    public Mono<Map<String, Object>> executeOperation(String operationId, Map<String, Object> parameters) {
-        log.info("Executing credit bureau operation: {} with parameters: {}", operationId, parameters);
-
-        return switch (operationId) {
-            case "search-company" -> searchCompany(parameters);
-            case "validate-tax-id" -> validateTaxId(parameters);
-            case "get-credit-score" -> getCreditScore(parameters);
-            default -> Mono.error(new IllegalArgumentException(
-                "Unknown operation: " + operationId + ". Available operations: search-company, validate-tax-id, get-credit-score"));
-        };
-    }
-
-    // ========== OPERATION IMPLEMENTATIONS ==========
-
-    /**
-     * Search for a company in credit bureau database.
-     */
-    private Mono<Map<String, Object>> searchCompany(Map<String, Object> params) {
-        String companyName = (String) params.get("companyName");
-        String taxId = (String) params.get("taxId");
-
-        // Validate parameters
-        if (companyName == null && taxId == null) {
-            return Mono.error(new IllegalArgumentException(
-                "Either 'companyName' or 'taxId' parameter is required"));
-        }
-
-        log.debug("Searching credit bureau for company: name={}, taxId={}", companyName, taxId);
-
-        // Build query parameters
-        var queryBuilder = bureauClient.get("/api/v1/companies/search", CompanySearchResponse.class);
-        if (companyName != null) {
-            queryBuilder.withQueryParam("name", companyName);
-        }
-        if (taxId != null) {
-            queryBuilder.withQueryParam("tax_id", taxId);
-        }
-
-        return queryBuilder.execute()
-            .map(result -> Map.of(
-                "providerId", result.getCompanyId(),
-                "companyName", result.getCompanyName(),
-                "taxId", result.getTaxId(),
-                "confidence", result.getMatchConfidence(),
-                "active", result.getIsActive()
-            ))
-            .doOnSuccess(result ->
-                log.info("Found company in credit bureau: providerId={}, confidence={}",
-                    result.get("providerId"), result.get("confidence")))
-            .doOnError(error ->
-                log.error("Failed to search company in credit bureau: name={}, taxId={}",
-                    companyName, taxId, error));
-    }
-
-    /**
-     * Validate a tax ID in credit bureau database.
-     */
-    private Mono<Map<String, Object>> validateTaxId(Map<String, Object> params) {
-        String taxId = (String) params.get("taxId");
-
-        if (taxId == null || taxId.isBlank()) {
-            return Mono.error(new IllegalArgumentException("Parameter 'taxId' is required"));
-        }
-
-        log.debug("Validating tax ID in credit bureau: {}", taxId);
-
-        return bureauClient.get("/api/v1/companies/validate", CompanySearchResponse.class)
-            .withQueryParam("tax_id", taxId)
-            .execute()
-            .map(result -> Map.of(
-                "valid", true,
-                "providerId", result.getCompanyId(),
-                "companyName", result.getCompanyName()
-            ))
-            .onErrorResume(error -> {
-                log.warn("Tax ID validation failed: {}", taxId);
-                return Mono.just(Map.of("valid", false));
-            });
-    }
-
-    /**
-     * Get credit score only (quick lookup).
-     */
-    private Mono<Map<String, Object>> getCreditScore(Map<String, Object> params) {
-        String providerId = (String) params.get("providerId");
-
-        if (providerId == null || providerId.isBlank()) {
-            return Mono.error(new IllegalArgumentException("Parameter 'providerId' is required"));
-        }
-
-        log.debug("Fetching credit score from credit bureau for ID: {}", providerId);
-
-        return bureauClient.get("/api/v1/credit-scores/{id}", Map.class)
-            .withPathParam("id", providerId)
-            .execute()
-            .map(result -> Map.of(
-                "creditScore", result.get("score"),
-                "creditRating", result.get("rating"),
-                "riskLevel", mapRiskLevel((String) result.get("risk_level")),
-                "lastUpdated", result.get("last_updated"),
-                "providerId", providerId
-            ))
-            .doOnSuccess(result ->
-                log.info("Retrieved credit score: providerId={}, score={}",
-                    providerId, result.get("creditScore")));
     }
 
     // ========== METADATA METHODS ==========
@@ -2021,7 +2057,7 @@ Checks the health of the enrichment provider.
 
 ---
 
-## Provider-Specific Operations
+## Provider-Specific Custom Operations
 
 Many data enrichment providers require auxiliary operations before the main enrichment can be performed. For example:
 
@@ -2030,164 +2066,256 @@ Many data enrichment providers require auxiliary operations before the main enri
 - **Validation**: Validate identifiers (Tax ID, VAT, etc.)
 - **Metadata Retrieval**: Get provider-specific configuration or metadata
 
-The library provides a **declarative catalog system** that allows enrichers to expose these operations as REST endpoints automatically.
+The library provides a **class-based operation system** with automatic discovery, JSON Schema generation, and REST endpoint exposure.
 
-### Implementing Provider-Specific Operations
+### Implementing Provider-Specific Custom Operations
 
-#### Step 1: Implement `ProviderOperationCatalog`
+#### Step 1: Define Request/Response DTOs
+
+Create type-safe DTOs for your operation:
 
 ```java
-@Service
-public class CreditBureauEnricher
-        extends TypedDataEnricher<CompanyDTO, CreditBureauResponse, CompanyDTO>
-        implements ProviderOperationCatalog {
+/**
+ * Request DTO for company search operation.
+ */
+public record CompanySearchRequest(
+    @Schema(description = "Company name to search for", example = "Acme Corporation")
+    String companyName,
 
+    @Schema(description = "Tax ID to search for", example = "TAX-12345678")
+    String taxId,
+
+    @Schema(description = "Minimum confidence score (0-1)", example = "0.8")
+    Double minConfidence
+) {}
+
+/**
+ * Response DTO for company search operation.
+ */
+public record CompanySearchResponse(
+    @Schema(description = "Provider's internal ID", example = "PROV-12345")
+    String providerId,
+
+    @Schema(description = "Company name as registered", example = "ACME CORPORATION")
+    String companyName,
+
+    @Schema(description = "Tax ID", example = "TAX-12345678")
+    String taxId,
+
+    @Schema(description = "Match confidence score (0-1)", example = "0.95")
+    Double confidence
+) {}
+```
+
+#### Step 2: Create Operation Class with `@ProviderCustomOperation`
+
+Create a class that extends `AbstractProviderOperation` and annotate it with `@ProviderCustomOperation`:
+
+```java
+/**
+ * Provider operation for searching companies in the credit bureau database.
+ *
+ * <p>This operation allows clients to search for a company by name or tax ID
+ * to obtain the provider's internal ID, which is required for enrichment requests.</p>
+ */
+@ProviderCustomOperation(
+    operationId = "search-company",
+    description = "Search for a company by name or tax ID to obtain provider internal ID",
+    method = RequestMethod.POST,
+    tags = {"lookup", "search"},
+    requiresAuth = true
+)
+public class SearchCompanyOperation
+        extends AbstractProviderOperation<CompanySearchRequest, CompanySearchResponse> {
+
+    private final RestClient bureauClient;
+
+    /**
+     * Constructor with dependency injection.
+     *
+     * @param bureauClient REST client for credit bureau API
+     */
+    public SearchCompanyOperation(RestClient bureauClient) {
+        this.bureauClient = bureauClient;
+    }
+
+    /**
+     * Executes the search operation.
+     *
+     * @param request the search request
+     * @return the search response with provider ID and confidence score
+     */
     @Override
-    public List<ProviderOperation> getOperationCatalog() {
-        return List.of(
-            // Operation 1: Search company by name/tax ID to get provider internal ID
-            ProviderOperation.builder()
-                .operationId("search-company")
-                .path("/search-company")
-                .method(RequestMethod.GET)
-                .description("Search for a company by name or tax ID to obtain provider internal ID")
-                .requestExample(Map.of(
-                    "companyName", "Acme Corporation",
-                    "taxId", "TAX-12345678"
-                ))
-                .responseExample(Map.of(
-                    "providerId", "PROV-12345",
-                    "companyName", "ACME CORPORATION",
-                    "taxId", "TAX-12345678",
-                    "confidence", 0.95
-                ))
-                .tags(new String[]{"lookup", "search"})
-                .requiresAuth(true)
-                .build(),
+    protected Mono<CompanySearchResponse> doExecute(CompanySearchRequest request) {
+        log.debug("Searching for company: name={}, taxId={}",
+            request.companyName(), request.taxId());
 
-            // Operation 2: Validate Tax ID
-            ProviderOperation.builder()
-                .operationId("validate-tax-id")
-                .path("/validate-tax-id")
-                .method(RequestMethod.GET)
-                .description("Validate that a tax ID exists in credit bureau database")
-                .requestExample(Map.of("taxId", "TAX-12345678"))
-                .responseExample(Map.of(
-                    "valid", true,
-                    "providerId", "PROV-12345"
-                ))
-                .tags(new String[]{"validation"})
-                .build(),
-
-            // Operation 3: Get credit score only (without full enrichment)
-            ProviderOperation.builder()
-                .operationId("get-credit-score")
-                .path("/credit-score")
-                .method(RequestMethod.POST)
-                .description("Get just the credit score without full enrichment data")
-                .requestExample(Map.of("providerId", "PROV-12345"))
-                .responseExample(Map.of(
-                    "creditScore", 750,
-                    "creditRating", "AAA",
-                    "lastUpdated", "2025-10-24"
-                ))
-                .tags(new String[]{"credit", "quick-lookup"})
-                .build()
-        );
+        return bureauClient.post("/search", CompanySearchResponse.class)
+            .withBody(Map.of(
+                "name", request.companyName(),
+                "taxId", request.taxId(),
+                "minConfidence", request.minConfidence() != null ? request.minConfidence() : 0.7
+            ))
+            .execute()
+            .doOnSuccess(response ->
+                log.info("Company search successful: providerId={}, confidence={}",
+                    response.providerId(), response.confidence()))
+            .doOnError(error ->
+                log.error("Company search failed: name={}, taxId={}, error={}",
+                    request.companyName(), request.taxId(), error.getMessage()));
     }
 
+    /**
+     * Validates the request before execution.
+     *
+     * @param request the request to validate
+     * @throws IllegalArgumentException if validation fails
+     */
     @Override
-    public Mono<Map<String, Object>> executeOperation(
-            String operationId,
-            Map<String, Object> parameters) {
+    protected void validateRequest(CompanySearchRequest request) {
+        if (request.companyName() == null && request.taxId() == null) {
+            throw new IllegalArgumentException(
+                "Either companyName or taxId must be provided");
+        }
 
-        return switch (operationId) {
-            case "search-company" -> searchCompany(parameters);
-            case "validate-tax-id" -> validateTaxId(parameters);
-            case "get-credit-score" -> getCreditScore(parameters);
-            default -> Mono.error(new IllegalArgumentException(
-                "Unknown operation: " + operationId));
-        };
-    }
-
-    private Mono<Map<String, Object>> searchCompany(Map<String, Object> params) {
-        String companyName = (String) params.get("companyName");
-        String taxId = (String) params.get("taxId");
-
-        // Call credit bureau search API
-        return bureauClient.searchCompany(companyName, taxId)
-            .map(result -> Map.of(
-                "providerId", result.getId(),
-                "companyName", result.getName(),
-                "taxId", result.getTaxId(),
-                "confidence", result.getMatchScore()
-            ));
-    }
-
-    private Mono<Map<String, Object>> validateTaxId(Map<String, Object> params) {
-        String taxId = (String) params.get("taxId");
-
-        // Call credit bureau validation API
-        return bureauClient.validateTaxId(taxId)
-            .map(result -> Map.of(
-                "valid", result.isValid(),
-                "providerId", result.getId()
-            ));
-    }
-
-    private Mono<Map<String, Object>> getCreditScore(Map<String, Object> params) {
-        String providerId = (String) params.get("providerId");
-
-        // Call credit bureau credit score API
-        return bureauClient.getCreditScore(providerId)
-            .map(result -> Map.of(
-                "creditScore", result.getScore(),
-                "creditRating", result.getRating(),
-                "lastUpdated", result.getLastUpdated().toString(),
-                "providerId", providerId
-            ));
+        if (request.minConfidence() != null &&
+            (request.minConfidence() < 0 || request.minConfidence() > 1)) {
+            throw new IllegalArgumentException(
+                "minConfidence must be between 0 and 1");
+        }
     }
 }
 ```
 
-#### Step 2: REST Endpoints Are Automatically Exposed
+#### Step 3: Register Operations in Your Enricher
+
+```java
+@Service
+public class CreditBureauEnricher
+        extends TypedDataEnricher<CreditReportDTO, CreditBureauReportResponse, CreditReportDTO> {
+
+    private final SearchCompanyOperation searchCompanyOperation;
+    private final ValidateTaxIdOperation validateTaxIdOperation;
+    private final GetCreditScoreOperation getCreditScoreOperation;
+
+    /**
+     * Constructor with dependency injection.
+     */
+    public CreditBureauEnricher(
+            RestClient bureauClient,
+            SearchCompanyOperation searchCompanyOperation,
+            ValidateTaxIdOperation validateTaxIdOperation,
+            GetCreditScoreOperation getCreditScoreOperation) {
+        this.bureauClient = bureauClient;
+        this.searchCompanyOperation = searchCompanyOperation;
+        this.validateTaxIdOperation = validateTaxIdOperation;
+        this.getCreditScoreOperation = getCreditScoreOperation;
+    }
+
+    /**
+     * Returns the list of provider-specific operations.
+     *
+     * <p>These operations are automatically exposed as REST endpoints
+     * by the AbstractDataEnricherController.</p>
+     */
+    @Override
+    public List<ProviderOperation<?, ?>> getOperations() {
+        return List.of(
+            searchCompanyOperation,
+            validateTaxIdOperation,
+            getCreditScoreOperation
+        );
+    }
+
+    // ... enrichment methods ...
+}
+```
+
+### What You Get Automatically
+
+#### ✅ REST Endpoints
 
 The `AbstractDataEnricherController` automatically exposes these endpoints:
 
 ```
-POST /api/v1/enrichment/credit-bureau/enrich              (standard enrichment)
-GET  /api/v1/enrichment/credit-bureau/health              (health check)
-GET  /api/v1/enrichment/credit-bureau/operations          (list operations)
-GET  /api/v1/enrichment/credit-bureau/search-company      (via generic handler)
-GET  /api/v1/enrichment/credit-bureau/validate-tax-id     (via generic handler)
-POST /api/v1/enrichment/credit-bureau/credit-score        (via generic handler)
+POST /api/v1/enrichment/credit-bureau/enrich                      (standard enrichment)
+GET  /api/v1/enrichment/credit-bureau/health                      (health check)
+GET  /api/v1/enrichment/credit-bureau/operations                  (list operations with schemas)
+POST /api/v1/enrichment/credit-bureau/operation/search-company    (execute operation)
+POST /api/v1/enrichment/credit-bureau/operation/validate-tax-id   (execute operation)
+POST /api/v1/enrichment/credit-bureau/operation/get-credit-score  (execute operation)
 ```
 
-#### Step 3: Operations Appear in Discovery
+#### ✅ JSON Schema Generation
+
+Request and response schemas are automatically generated from your DTOs:
 
 ```bash
-GET /api/v1/enrichment/providers
+GET /api/v1/enrichment/credit-bureau/operations
 ```
 
 ```json
 {
   "providerName": "Credit Bureau Provider",
-  "supportedTypes": ["credit-report", "company-profile"],
-  "description": "Credit bureau data enrichment services",
-  "endpoints": [
-    "/api/v1/enrichment/credit-bureau/enrich"
-  ],
   "operations": [
     {
       "operationId": "search-company",
-      "path": "/api/v1/enrichment/credit-bureau/search-company",
-      "method": "GET",
+      "path": "/api/v1/enrichment/credit-bureau/operation/search-company",
+      "method": "POST",
       "description": "Search for a company by name or tax ID to obtain provider internal ID",
       "tags": ["lookup", "search"],
       "requiresAuth": true,
+      "requestType": "CompanySearchRequest",
+      "responseType": "CompanySearchResponse",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "description": "Company name to search for",
+            "example": "Acme Corporation"
+          },
+          "taxId": {
+            "type": "string",
+            "description": "Tax ID to search for",
+            "example": "TAX-12345678"
+          },
+          "minConfidence": {
+            "type": "number",
+            "description": "Minimum confidence score (0-1)",
+            "example": 0.8
+          }
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "description": "Provider's internal ID",
+            "example": "PROV-12345"
+          },
+          "companyName": {
+            "type": "string",
+            "description": "Company name as registered",
+            "example": "ACME CORPORATION"
+          },
+          "taxId": {
+            "type": "string",
+            "description": "Tax ID",
+            "example": "TAX-12345678"
+          },
+          "confidence": {
+            "type": "number",
+            "description": "Match confidence score (0-1)",
+            "example": 0.95
+          }
+        }
+      },
       "requestExample": {
         "companyName": "Acme Corporation",
-        "taxId": "TAX-12345678"
+        "taxId": "TAX-12345678",
+        "minConfidence": 0.8
       },
       "responseExample": {
         "providerId": "PROV-12345",
@@ -2203,11 +2331,34 @@ GET /api/v1/enrichment/providers
 ### Complete Workflow Example
 
 ```bash
-# Step 1: Discover available providers and their operations
-GET /api/v1/enrichment/providers?enrichmentType=credit-report
+# Step 1: Discover available operations with schemas
+GET /api/v1/enrichment/credit-bureau/operations
+
+Response:
+{
+  "providerName": "Credit Bureau Provider",
+  "operations": [
+    {
+      "operationId": "search-company",
+      "path": "/api/v1/enrichment/credit-bureau/operation/search-company",
+      "method": "POST",
+      "requestSchema": { ... },
+      "responseSchema": { ... },
+      "requestExample": { ... },
+      "responseExample": { ... }
+    }
+  ]
+}
 
 # Step 2: Search for company to get provider internal ID
-GET /api/v1/enrichment/credit-bureau/search-company?companyName=Acme%20Corp&taxId=TAX-12345678
+POST /api/v1/enrichment/credit-bureau/operation/search-company
+Content-Type: application/json
+
+{
+  "companyName": "Acme Corp",
+  "taxId": "TAX-12345678",
+  "minConfidence": 0.8
+}
 
 Response:
 {
@@ -2219,6 +2370,8 @@ Response:
 
 # Step 3: Use the provider ID for enrichment
 POST /api/v1/enrichment/credit-bureau/enrich
+Content-Type: application/json
+
 {
   "enrichmentType": "credit-report",
   "strategy": "ENHANCE",
@@ -2232,28 +2385,31 @@ POST /api/v1/enrichment/credit-bureau/enrich
 }
 ```
 
-### ProviderOperation Fields
+### @ProviderCustomOperation Annotation Fields
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `operationId` | String | ✅ | Unique identifier (kebab-case) |
-| `path` | String | ✅ | URL path relative to enricher base |
-| `method` | RequestMethod | ✅ | HTTP method (GET, POST, etc.) |
-| `description` | String | ✅ | Human-readable description |
-| `requestExample` | Map | ❌ | Example request for documentation |
-| `responseExample` | Map | ❌ | Example response for documentation |
-| `requiresAuth` | boolean | ❌ | Whether authentication is required (default: true) |
-| `tags` | String[] | ❌ | Tags for categorization |
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `operationId` | String | ✅ | - | Unique identifier (kebab-case) |
+| `description` | String | ✅ | - | Human-readable description |
+| `method` | RequestMethod | ❌ | GET | HTTP method (GET, POST, etc.) |
+| `tags` | String[] | ❌ | [] | Tags for categorization (e.g., "lookup", "search") |
+| `requiresAuth` | boolean | ❌ | true | Whether authentication is required |
+| `path` | String | ❌ | "" | Custom path (defaults to "/{operationId}") |
+| `discoverable` | boolean | ❌ | true | Whether to include in discovery endpoint |
+| `value` | String | ❌ | "" | Spring bean name (auto-generated if empty) |
 
 ### Benefits
 
-✅ **Declarative**: Operations are declared in a clear, structured way
-✅ **Automatic**: Endpoints are exposed automatically without additional code
-✅ **Documented**: Each operation includes description and examples
-✅ **Discoverable**: Operations appear in the discovery endpoint
-✅ **Flexible**: Supports any HTTP method and parameter structure
-✅ **Type-Safe**: Uses `Map<String, Object>` for maximum flexibility
-✅ **Controlled**: Each enricher controls what operations it exposes
+✅ **Type-Safe**: Compile-time type checking for request/response DTOs
+✅ **Automatic Schema Generation**: JSON Schemas generated from DTOs
+✅ **Automatic Endpoints**: REST endpoints exposed automatically
+✅ **Automatic Discovery**: Operations listed in `/operations` endpoint
+✅ **Automatic Validation**: Request validation via `validateRequest()` method
+✅ **Clean Code**: No manual Map manipulation or type casting
+✅ **Better DX**: IDE autocompletion and refactoring support
+✅ **OpenAPI Integration**: Full Swagger documentation with schemas
+✅ **Testable**: Easy to unit test with typed DTOs
+✅ **Maintainable**: Clear separation of concerns
 
 ---
 
@@ -2593,20 +2749,25 @@ firefly:
     enrichment:
       # Enable/disable data enrichment
       enabled: true
-      
+
       # Event publishing
       publish-events: true
-      
-      # Caching
-      cache-enabled: false
-      cache-ttl-seconds: 3600
-      
+
+      # Caching (requires lib-common-cache)
+      cache-enabled: true                # Enable/disable caching (default: false)
+      cache-ttl-seconds: 3600            # Cache TTL in seconds (default: 3600 = 1 hour)
+
+      # Batch enrichment
+      max-batch-size: 100                # Maximum batch size (default: 100)
+      batch-parallelism: 10              # Parallel processing level (default: 10)
+      batch-fail-fast: false             # Fail entire batch on first error (default: false)
+
       # Timeouts
       default-timeout-seconds: 30
-      
+
       # Audit
       capture-raw-responses: false
-      
+
       # Concurrency
       max-concurrent-enrichments: 100
 ```
@@ -2756,6 +2917,381 @@ The library includes the following test files as examples:
 - `EnrichmentEventPublisherTest.java` - Tests for event publishing
 - `AbstractDataEnricherControllerTest.java` - Tests for REST controller
 - `DataEnrichmentPropertiesTest.java` - Tests for configuration properties
+
+---
+
+## Caching and Performance
+
+### Enrichment Caching
+
+The library provides built-in caching support with tenant isolation using `lib-common-cache`. Caching significantly improves performance by reducing redundant calls to external providers.
+
+#### Enabling Cache
+
+**1. Add lib-common-cache dependency** (if not already present):
+
+```xml
+<dependency>
+    <groupId>com.firefly</groupId>
+    <artifactId>lib-common-cache</artifactId>
+</dependency>
+```
+
+**2. Enable caching in configuration**:
+
+```yaml
+firefly:
+  data:
+    enrichment:
+      cache-enabled: true
+      cache-ttl-seconds: 3600  # 1 hour
+```
+
+**3. Configure cache adapter** (Caffeine example):
+
+```yaml
+firefly:
+  cache:
+    caffeine:
+      enabled: true
+      default-ttl: 3600
+      maximum-size: 10000
+```
+
+#### How Caching Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. Request arrives                                               │
+│    enricher.enrich(request)                                      │
+└─────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ 2. Generate cache key with tenant isolation                     │
+│    enrichment:{tenantId}:{providerName}:{type}:{paramsHash}     │
+│                                                                  │
+│    Example:                                                      │
+│    enrichment:tenant-abc:Financial Provider:company:a3f2b1c4    │
+└─────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ 3. Check cache                                                   │
+│    ┌─────────────┐                                              │
+│    │ Cache HIT?  │                                              │
+│    └─────────────┘                                              │
+│         │                                                        │
+│    ┌────┴────┐                                                  │
+│    │   YES   │ → Return cached response (fast!)                 │
+│    └─────────┘                                                  │
+│         │                                                        │
+│    ┌────┴────┐                                                  │
+│    │   NO    │ → Call provider → Cache response → Return        │
+│    └─────────┘                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Tenant Isolation
+
+Each tenant has **completely isolated** cache entries. The cache key includes the tenant ID, ensuring zero data leakage between tenants.
+
+**Cache Key Format:**
+```
+enrichment:{tenantId}:{providerName}:{enrichmentType}:{parametersHash}
+```
+
+**Components:**
+- `enrichment` - Fixed prefix for all enrichment cache entries
+- `{tenantId}` - Tenant identifier (e.g., `tenant-abc`, `tenant-xyz`)
+- `{providerName}` - Provider name (e.g., `Financial-Provider`, `Equifax-Spain`)
+- `{enrichmentType}` - Enrichment type (e.g., `company-profile`, `credit-report`)
+- `{parametersHash}` - SHA-256 hash of sorted parameters (ensures same params = same hash)
+
+**Example:**
+
+```java
+// Tenant ABC request
+EnrichmentRequest request1 = EnrichmentRequest.builder()
+    .enrichmentType("company-profile")
+    .parameters(Map.of("companyId", "12345", "includeFinancials", true))
+    .tenantId("tenant-abc")
+    .build();
+
+// Cache key generated:
+// enrichment:tenant-abc:Financial-Provider:company-profile:a3f2b1c4d5e6f7g8h9i0j1k2l3m4n5o6
+
+// Tenant XYZ request (SAME parameters!)
+EnrichmentRequest request2 = EnrichmentRequest.builder()
+    .enrichmentType("company-profile")
+    .parameters(Map.of("companyId", "12345", "includeFinancials", true))
+    .tenantId("tenant-xyz")  // ← Different tenant
+    .build();
+
+// Cache key generated (DIFFERENT due to tenant ID):
+// enrichment:tenant-xyz:Financial-Provider:company-profile:a3f2b1c4d5e6f7g8h9i0j1k2l3m4n5o6
+//            ^^^^^^^^^^
+//            Different tenant = different cache entry!
+```
+
+**Key Points:**
+- ✅ **Same parameters, different tenants** → Different cache keys → Complete isolation
+- ✅ **Parameter order doesn't matter** → Parameters are sorted before hashing
+- ✅ **SHA-256 hashing** → Ensures unique hash for unique parameter combinations
+- ✅ **No data leakage** → Tenant ABC can NEVER access Tenant XYZ's cached data
+
+**Parameter Hashing Example:**
+
+```java
+// These two requests generate the SAME hash (parameters sorted before hashing):
+Map.of("companyId", "12345", "includeFinancials", true)
+Map.of("includeFinancials", true, "companyId", "12345")  // ← Different order, same hash!
+
+// Hash: a3f2b1c4d5e6f7g8h9i0j1k2l3m4n5o6 (SHA-256 of sorted params)
+```
+
+#### Cache Management
+
+**Evict specific entry**:
+
+```java
+@Autowired
+private EnrichmentCacheService cacheService;
+
+// Evict specific request
+cacheService.evict(request, providerName).subscribe();
+```
+
+**Evict all entries for a tenant**:
+
+```java
+// Clear all cache for tenant
+cacheService.evictTenant("tenant-abc").subscribe();
+```
+
+**Clear all cache**:
+
+```java
+// Clear entire enrichment cache
+cacheService.clearAll().subscribe();
+```
+
+#### Cache Statistics
+
+Monitor cache performance:
+
+```java
+// Cache hit/miss logs
+2025-10-24 15:00:00 DEBUG Cache HIT for key: enrichment:tenant-abc:Provider:company:hash123
+2025-10-24 15:00:01 DEBUG Cache MISS for key: enrichment:tenant-xyz:Provider:company:hash456
+```
+
+---
+
+### Batch Enrichment
+
+Process multiple enrichment requests in parallel for improved throughput.
+
+#### Using Batch Enrichment
+
+**REST API**:
+
+```bash
+POST /api/v1/enrichment/{providerName}/enrich/batch
+Content-Type: application/json
+
+[
+  {
+    "enrichmentType": "company-profile",
+    "strategy": "ENHANCE",
+    "parameters": {"companyId": "12345"},
+    "tenantId": "tenant-abc"
+  },
+  {
+    "enrichmentType": "company-profile",
+    "strategy": "ENHANCE",
+    "parameters": {"companyId": "67890"},
+    "tenantId": "tenant-abc"
+  },
+  {
+    "enrichmentType": "company-profile",
+    "strategy": "ENHANCE",
+    "parameters": {"companyId": "11111"},
+    "tenantId": "tenant-abc"
+  }
+]
+```
+
+**Programmatic**:
+
+```java
+@Autowired
+private DataEnricher enricher;
+
+List<EnrichmentRequest> requests = List.of(
+    EnrichmentRequest.builder()
+        .enrichmentType("company-profile")
+        .parameters(Map.of("companyId", "12345"))
+        .tenantId("tenant-abc")
+        .build(),
+    EnrichmentRequest.builder()
+        .enrichmentType("company-profile")
+        .parameters(Map.of("companyId", "67890"))
+        .tenantId("tenant-abc")
+        .build(),
+    EnrichmentRequest.builder()
+        .enrichmentType("company-profile")
+        .parameters(Map.of("companyId", "11111"))
+        .tenantId("tenant-abc")
+        .build()
+);
+
+Flux<EnrichmentResponse> responses = enricher.enrichBatch(requests);
+
+responses.subscribe(
+    response -> log.info("Enriched: {}", response.getEnrichedData()),
+    error -> log.error("Batch error: {}", error.getMessage()),
+    () -> log.info("Batch completed")
+);
+```
+
+#### Batch Configuration
+
+```yaml
+firefly:
+  data:
+    enrichment:
+      max-batch-size: 100        # Maximum requests per batch
+      batch-parallelism: 10      # Number of parallel requests
+      batch-fail-fast: false     # Stop on first error?
+```
+
+#### Batch Processing Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Batch Request: [req1, req2, req3, req4, req5]                   │
+└─────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Parallel Processing (parallelism = 10)                          │
+│                                                                  │
+│  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐             │
+│  │ req1 │  │ req2 │  │ req3 │  │ req4 │  │ req5 │             │
+│  └──┬───┘  └──┬───┘  └──┬───┘  └──┬───┘  └──┬───┘             │
+│     │         │         │         │         │                   │
+│     ▼         ▼         ▼         ▼         ▼                   │
+│  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐             │
+│  │Cache?│  │Cache?│  │Cache?│  │Cache?│  │Cache?│             │
+│  └──┬───┘  └──┬───┘  └──┬───┘  └──┬───┘  └──┬───┘             │
+│     │         │         │         │         │                   │
+│     ▼         ▼         ▼         ▼         ▼                   │
+│  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐             │
+│  │ HIT! │  │ MISS │  │ MISS │  │ HIT! │  │ MISS │             │
+│  └──┬───┘  └──┬───┘  └──┬───┘  └──┬───┘  └──┬───┘             │
+│     │         │         │         │         │                   │
+│     │         ▼         ▼         │         ▼                   │
+│     │    ┌────────────────┐       │    ┌────────┐              │
+│     │    │ Call Provider  │       │    │Provider│              │
+│     │    └────────────────┘       │    └────────┘              │
+│     │         │         │         │         │                   │
+│     ▼         ▼         ▼         ▼         ▼                   │
+│  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐             │
+│  │ res1 │  │ res2 │  │ res3 │  │ res4 │  │ res5 │             │
+│  └──────┘  └──────┘  └──────┘  └──────┘  └──────┘             │
+└─────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Flux<EnrichmentResponse> (streaming results)                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Batch with Cache Benefits
+
+When using batch enrichment with caching:
+
+```java
+// First batch - all cache misses
+List<EnrichmentRequest> batch1 = createBatch(100);
+enricher.enrichBatch(batch1).blockLast();
+// → 100 provider calls
+
+// Second batch - same requests, all cache hits!
+List<EnrichmentRequest> batch2 = createBatch(100);
+enricher.enrichBatch(batch2).blockLast();
+// → 0 provider calls! (all from cache)
+
+// Third batch - 50 duplicates, 50 new
+List<EnrichmentRequest> batch3 = createMixedBatch(50, 50);
+enricher.enrichBatch(batch3).blockLast();
+// → 50 provider calls (only for new requests)
+```
+
+#### Batch with Duplicates - Smart Deduplication
+
+The batch enrichment automatically detects duplicates **within the same batch** and only calls the provider once per unique request:
+
+```java
+// Batch with duplicates
+List<EnrichmentRequest> requests = List.of(
+    createRequest("12345", "tenant-abc"),  // Request 1
+    createRequest("12345", "tenant-abc"),  // Duplicate of Request 1
+    createRequest("67890", "tenant-abc"),  // Request 2
+    createRequest("12345", "tenant-abc"),  // Duplicate of Request 1
+    createRequest("67890", "tenant-abc")   // Duplicate of Request 2
+);
+
+// Process batch
+Flux<EnrichmentResponse> responses = enricher.enrichBatch(requests);
+
+// Result:
+// - 5 responses returned (one for each request in the batch)
+// - Only 2 provider calls made (for "12345" and "67890")
+// - 3 responses served from cache (the duplicates)
+```
+
+**How it works:**
+
+1. **Cache key generation**: Each request generates a cache key based on tenant + provider + type + parameters
+2. **First occurrence**: If cache miss, calls provider and caches the response
+3. **Duplicate detection**: Subsequent requests with same cache key get cached response
+4. **Order preservation**: Responses are returned in the same order as requests
+
+**Example with logs:**
+
+```
+2025-10-24 15:00:00 DEBUG Processing batch of 5 requests
+2025-10-24 15:00:00 DEBUG Cache MISS for key: enrichment:tenant-abc:Provider:company:hash-12345
+2025-10-24 15:00:00 DEBUG Calling provider for companyId=12345
+2025-10-24 15:00:01 DEBUG Cache HIT for key: enrichment:tenant-abc:Provider:company:hash-12345 (duplicate)
+2025-10-24 15:00:01 DEBUG Cache MISS for key: enrichment:tenant-abc:Provider:company:hash-67890
+2025-10-24 15:00:01 DEBUG Calling provider for companyId=67890
+2025-10-24 15:00:02 DEBUG Cache HIT for key: enrichment:tenant-abc:Provider:company:hash-12345 (duplicate)
+2025-10-24 15:00:02 DEBUG Cache HIT for key: enrichment:tenant-abc:Provider:company:hash-67890 (duplicate)
+2025-10-24 15:00:02 INFO Batch completed: 5 responses, 2 provider calls, 3 cache hits
+```
+
+**Performance Impact:**
+
+```java
+// Batch with 100 requests, but only 10 unique
+List<EnrichmentRequest> batch = createBatchWithDuplicates(100, 10);
+
+// Without cache: 100 provider calls (wasteful!)
+// With cache: 10 provider calls (90% reduction!)
+```
+
+#### Performance Comparison
+
+| Scenario | Without Cache | With Cache | Improvement |
+|----------|---------------|------------|-------------|
+| Single request (first time) | 200ms | 200ms | 0% |
+| Single request (cached) | 200ms | 2ms | **99%** |
+| Batch 100 (first time) | 20s | 20s | 0% |
+| Batch 100 (all cached) | 20s | 0.2s | **99%** |
+| Batch 100 (50% cached) | 20s | 10s | **50%** |
 
 ---
 

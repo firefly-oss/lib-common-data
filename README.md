@@ -29,21 +29,55 @@ A powerful Spring Boot library that enables standardized data processing archite
 
 ## Overview
 
-The `lib-common-data` library provides a unified approach to building data processing microservices within the Firefly ecosystem. It establishes common patterns for:
+The `lib-common-data` library provides a unified approach to building data processing microservices within the Firefly ecosystem. It offers two main capabilities:
 
-- **Job Orchestration**: Integration with workflow orchestrators like AWS Step Functions
-- **Job Lifecycle Management**:
-  - **Asynchronous Jobs**: Multi-stage lifecycle (START, CHECK, COLLECT, RESULT, STOP) for long-running workflows
-  - **Synchronous Jobs**: Single-stage execution for quick operations (< 30 seconds)
-- **Data Enrichment**: Standardized abstraction for enriching data from third-party providers (financial data, credit bureaus, business intelligence, etc.)
+### 🔧 1. Data Jobs - Orchestrated Workflows
+
+**Data Jobs** are for executing complex, multi-step workflows that interact with external systems (databases, APIs, file systems, etc.). Think of them as "tasks" that your microservice needs to perform.
+
+**Use Cases:**
+- Processing large datasets from external sources
+- Running ETL (Extract, Transform, Load) operations
+- Coordinating multi-step business processes
+- Batch processing and scheduled tasks
+
+**Two Types:**
+- **Asynchronous Jobs** (for long-running tasks > 30 seconds)
+  - Multi-stage lifecycle: START → CHECK → COLLECT → RESULT
+  - Integrated with orchestrators (AWS Step Functions, Apache Airflow)
+  - Example: Processing millions of records from a data warehouse
+
+- **Synchronous Jobs** (for quick operations < 30 seconds)
+  - Single-stage: EXECUTE
+  - Returns results immediately
+  - Example: Validating a single customer record
+
+### 🌐 2. Data Enrichers - Third-Party Provider Integration
+
+**Data Enrichers** are for fetching and integrating data from external third-party providers (credit bureaus, financial data providers, business intelligence services, etc.). They standardize how you call external APIs and merge their data with yours.
+
+**Use Cases:**
+- Enriching customer data with credit scores from credit bureaus
+- Adding financial metrics from market data providers
+- Augmenting company profiles with business intelligence data
+- Validating addresses or tax IDs with government services
+
+**Key Features:**
+- Standardized REST API for all providers
+- Automatic data merging strategies (ENHANCE, MERGE, REPLACE, RAW)
+- Provider-specific operations (search, validate, quick-lookup)
+- Built-in caching, retry, and circuit breaker patterns
+
+### 🎯 Additional Capabilities
+
 - **Event-Driven Architecture**: Seamless integration with `lib-common-eda`
 - **CQRS Support**: Built-in CQRS pattern integration via `lib-common-cqrs`
-- **Transactional Workflows**: Full SAGA support through `lib-transactional-engine` with step event publishing
+- **Transactional Workflows**: Full SAGA support through `lib-transactional-engine`
 
 ### Why Use This Library?
 
 - ✅ **Standardization** - Consistent patterns across all data processing microservices
-- ✅ **Flexibility** - Pluggable orchestrators via port/adapter architecture
+- ✅ **Flexibility** - Pluggable orchestrators and providers via port/adapter architecture
 - ✅ **Observability** - Built-in distributed tracing, metrics, and health checks
 - ✅ **Scalability** - CQRS and reactive programming support
 - ✅ **Reliability** - SAGA pattern for distributed transactions
@@ -156,8 +190,99 @@ Standardized abstraction for enriching data from third-party providers (financia
   - **MERGE**: Combine source + provider (provider wins conflicts)
   - **REPLACE**: Use only provider data (ignore source)
   - **RAW**: Return provider data as-is without mapping
+- **Tenant-Isolated Caching** ⭐ **NEW!** - Built-in caching with complete tenant isolation
+  - Automatic cache key generation with tenant ID
+  - Configurable TTL (time-to-live)
+  - Cache hit/miss logging
+  - Pattern-based eviction (by tenant, provider, or type)
+  - 99% performance improvement for cached requests
+- **Batch Enrichment** ⭐ **NEW!** - Process multiple requests in parallel
+  - Configurable parallelism (default: 10 concurrent requests)
+  - Automatic cache utilization for duplicates
+  - Configurable batch size limits
+  - Fail-fast or continue-on-error modes
+  - 10x throughput improvement for bulk operations
 - **Multiple Provider Support** - Financial data providers, credit bureaus, business intelligence, and custom providers
-- **Multi-Region Architecture** - One microservice per provider with multiple regional implementations (e.g., Provider A Spain, Provider A USA)
+- **Multi-Region Architecture** - One microservice per provider with multiple regional implementations
+
+#### Provider-Specific Custom Operations
+
+Many providers require auxiliary operations before enrichment (e.g., searching for internal IDs, validating identifiers). The library provides a **class-based operation system** with automatic discovery and REST endpoint exposure:
+
+**Example: Credit Bureau Provider**
+```java
+// 1. Define your request/response DTOs
+public record CompanySearchRequest(
+    String companyName,
+    String taxId,
+    Double minConfidence
+) {}
+
+public record CompanySearchResponse(
+    String providerId,
+    String companyName,
+    String taxId,
+    Double confidence
+) {}
+
+// 2. Create operation class with @ProviderCustomOperation annotation
+@ProviderCustomOperation(
+    operationId = "search-company",
+    description = "Search for a company by name or tax ID to obtain provider internal ID",
+    method = RequestMethod.GET,
+    tags = {"lookup", "search"}
+)
+public class SearchCompanyOperation
+        extends AbstractProviderOperation<CompanySearchRequest, CompanySearchResponse> {
+
+    private final RestClient providerClient;
+
+    public SearchCompanyOperation(RestClient providerClient) {
+        this.providerClient = providerClient;
+    }
+
+    @Override
+    protected Mono<CompanySearchResponse> doExecute(CompanySearchRequest request) {
+        return providerClient.get("/search", CompanySearchResponse.class)
+            .withQueryParam("name", request.companyName())
+            .withQueryParam("taxId", request.taxId())
+            .execute();
+    }
+
+    @Override
+    protected void validateRequest(CompanySearchRequest request) {
+        if (request.companyName() == null && request.taxId() == null) {
+            throw new IllegalArgumentException("Either companyName or taxId must be provided");
+        }
+    }
+}
+
+// 3. Register operations in your enricher
+@Service
+public class CreditBureauEnricher extends TypedDataEnricher<...> {
+
+    private final SearchCompanyOperation searchCompanyOperation;
+    private final ValidateTaxIdOperation validateTaxIdOperation;
+
+    @Override
+    public List<ProviderOperation<?, ?>> getOperations() {
+        return List.of(searchCompanyOperation, validateTaxIdOperation);
+    }
+}
+```
+
+**What You Get Automatically:**
+- ✅ **REST Endpoints** - `GET /api/v1/enrichment/credit-bureau/operation/search-company`
+- ✅ **JSON Schema Generation** - Request/response schemas auto-generated from DTOs
+- ✅ **Type Safety** - Compile-time type checking for request/response
+- ✅ **Validation** - Automatic request validation
+- ✅ **Discovery** - `GET /api/v1/enrichment/credit-bureau/operations` lists all operations
+- ✅ **OpenAPI Docs** - Full Swagger documentation
+
+**Typical Workflow:**
+1. **Search** for company → Get provider's internal ID
+2. **Validate** identifier → Confirm it exists
+3. **Enrich** data → Use internal ID to fetch full data
 
 #### Integration & Observability
 
@@ -175,9 +300,11 @@ Standardized abstraction for enriching data from third-party providers (financia
   - `GET /api/v1/enrichment/providers` - List all providers
   - `GET /api/v1/enrichment/providers?enrichmentType=credit-report` - Filter by type
   - Returns provider names, supported types, descriptions, and REST endpoints
-- **REST API** - Standardized REST endpoints for enrichment operations (one endpoint per regional implementation)
-  - `POST /api/v1/enrichment/{provider-region-type}/enrich` - Enrich data
-  - `GET /api/v1/enrichment/{provider-region-type}/health` - Health check
+- **REST API** - Standardized REST endpoints for enrichment operations
+  - `POST /api/v1/enrichment/{provider-name}/enrich` - Enrich data
+  - `GET /api/v1/enrichment/{provider-name}/health` - Health check
+  - `GET /api/v1/enrichment/{provider-name}/operations` - List provider-specific operations
+  - `GET|POST /api/v1/enrichment/{provider-name}/{operation-id}` - Execute provider operation
 - **Automatic Endpoint Registration** - Controllers automatically register their endpoints with enrichers
 - **OpenAPI Documentation** - Full Swagger/OpenAPI documentation for all endpoints
 
@@ -213,38 +340,30 @@ Add the following dependency to your `pom.xml`:
 
 ## Quick Start
 
-### 1. Enable Auto-Configuration
+Choose your use case:
+- **[Quick Start: Data Jobs](#quick-start-data-jobs)** - For orchestrated workflows
+- **[Quick Start: Data Enrichers](#quick-start-data-enrichers)** - For third-party provider integration
 
-The library uses Spring Boot auto-configuration. Simply add the dependency and configure your `application.yml`:
+---
+
+## Quick Start: Data Jobs
+
+### 1. Configure Your Application
+
+Add configuration to `application.yml`:
 
 ```yaml
 firefly:
   data:
-    eda:
-      enabled: true
-    cqrs:
-      enabled: true
     orchestration:
       enabled: true
-      orchestrator-type: AWS_STEP_FUNCTIONS
+      orchestrator-type: AWS_STEP_FUNCTIONS  # or APACHE_AIRFLOW
       aws-step-functions:
         region: us-east-1
-        state-machine-arn: arn:aws:states:us-east-1:123456789012:stateMachine:DataJobStateMachine
-    transactional:
-      enabled: true
-  stepevents:
-    enabled: true
-    topic: data-processing-step-events
-    include-job-context: true
-
-# Logging configuration (JSON by default, use "plain" for development)
-logging:
-  format: json  # or "plain" for human-readable logs
-  level:
-    com.firefly: INFO
+        state-machine-arn: arn:aws:states:us-east-1:123456789012:stateMachine:MyWorkflow
 ```
 
-### 2. Implement DataJobService (Recommended: Use AbstractResilientDataJobService)
+### 2A. Implement Asynchronous Data Job (Multi-Stage)
 
 **Option A: Extend AbstractResilientDataJobService (Recommended)**
 
@@ -261,8 +380,12 @@ public class MyDataJobService extends AbstractResilientDataJobService {
             JobTracingService tracingService,
             JobMetricsService metricsService,
             ResiliencyDecoratorService resiliencyService,
+            JobEventPublisher eventPublisher,
+            JobAuditService auditService,
+            JobExecutionResultService resultService,
             JobOrchestrator jobOrchestrator) {
-        super(tracingService, metricsService, resiliencyService);
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
         this.jobOrchestrator = jobOrchestrator;
     }
 
@@ -556,7 +679,99 @@ protected String getJobDefinition() {
 }
 ```
 
-### 5. Implement Data Enricher (Recommended: Use TypedDataEnricher)
+### 2B. Implement Synchronous Data Job (Single-Stage)
+
+For quick operations that complete in < 30 seconds:
+
+```java
+@Service
+@Slf4j
+public class DataValidationSyncJob extends AbstractResilientSyncDataJobService {
+
+    private final ValidationService validationService;
+
+    public DataValidationSyncJob(
+            JobTracingService tracingService,
+            JobMetricsService metricsService,
+            ResiliencyDecoratorService resiliencyService,
+            JobEventPublisher eventPublisher,
+            JobAuditService auditService,
+            JobExecutionResultService resultService,
+            ValidationService validationService) {
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
+        this.validationService = validationService;
+    }
+
+    @Override
+    protected Mono<JobStageResponse> doExecute(JobStageRequest request) {
+        String customerId = (String) request.getParameters().get("customerId");
+
+        return validationService.validateCustomer(customerId)
+            .map(result -> JobStageResponse.builder()
+                .success(true)
+                .executionId(request.getExecutionId())
+                .data(Map.of("validationResult", result))
+                .message("Customer validation completed successfully")
+                .build());
+    }
+
+    @Override
+    protected String getJobName() {
+        return "DataValidationJob";
+    }
+
+    @Override
+    protected String getJobDescription() {
+        return "Validates customer data synchronously";
+    }
+}
+```
+
+**Controller for Sync Job:**
+
+```java
+@RestController
+@Tag(name = "Sync Job - Data Validation")
+public class DataValidationSyncJobController extends AbstractSyncDataJobController {
+
+    public DataValidationSyncJobController(SyncDataJobService syncJobService) {
+        super(syncJobService);
+    }
+
+    // That's it! Endpoint is automatically exposed:
+    // POST /api/v1/sync-jobs/execute
+}
+```
+
+**See [Synchronous Jobs Guide](docs/sync-jobs.md) for complete documentation.**
+
+---
+
+## Quick Start: Data Enrichers
+
+### 1. Configure Your Application
+
+Add configuration to `application.yml`:
+
+```yaml
+firefly:
+  data:
+    enrichment:
+      enabled: true
+      publish-events: true
+      default-timeout-seconds: 30
+      retry-enabled: true
+      max-retry-attempts: 3
+
+# Provider-specific configuration
+credit:
+  bureau:
+    base-url: https://api.credit-bureau-provider.com
+    api-key: ${CREDIT_BUREAU_API_KEY}
+```
+
+### 2. Implement Data Enricher (Recommended: Use TypedDataEnricher)
 
 **Option A: Extend TypedDataEnricher (Recommended)**
 
@@ -633,7 +848,123 @@ public class FinancialDataEnricher
 }
 ```
 
-**Benefits of using TypedDataEnricher:**
+### 3. Add Provider-Specific Custom Operations (Optional but Recommended)
+
+Many providers require auxiliary operations (search, validate, lookup). Create operation classes with `@ProviderCustomOperation` annotation:
+
+```java
+// Step 1: Define DTOs for your operation
+public record CompanySearchRequest(
+    String companyName,
+    String taxId,
+    Double minConfidence
+) {}
+
+public record CompanySearchResponse(
+    String providerId,
+    String companyName,
+    String taxId,
+    Double confidence
+) {}
+
+// Step 2: Create operation class
+@ProviderCustomOperation(
+    operationId = "search-company",
+    description = "Search for a company by name or tax ID to obtain provider internal ID",
+    method = RequestMethod.GET,
+    tags = {"lookup", "search"}
+)
+public class SearchCompanyOperation
+        extends AbstractProviderOperation<CompanySearchRequest, CompanySearchResponse> {
+
+    private final RestClient bureauClient;
+
+    public SearchCompanyOperation(RestClient bureauClient) {
+        this.bureauClient = bureauClient;
+    }
+
+    @Override
+    protected Mono<CompanySearchResponse> doExecute(CompanySearchRequest request) {
+        return bureauClient.get("/search", CompanySearchResponse.class)
+            .withQueryParam("name", request.companyName())
+            .withQueryParam("taxId", request.taxId())
+            .execute()
+            .map(result -> new CompanySearchResponse(
+                result.getId(),
+                result.getName(),
+                result.getTaxId(),
+                result.getMatchScore()
+            ));
+    }
+
+    @Override
+    protected void validateRequest(CompanySearchRequest request) {
+        if (request.companyName() == null && request.taxId() == null) {
+            throw new IllegalArgumentException("Either companyName or taxId must be provided");
+        }
+    }
+}
+
+// Step 3: Register operations in your enricher
+@Service
+public class CreditBureauEnricher
+        extends TypedDataEnricher<CreditReportDTO, CreditBureauReportResponse, CreditReportDTO> {
+
+    private final SearchCompanyOperation searchCompanyOperation;
+    private final ValidateTaxIdOperation validateTaxIdOperation;
+
+    public CreditBureauEnricher(
+            RestClient bureauClient,
+            SearchCompanyOperation searchCompanyOperation,
+            ValidateTaxIdOperation validateTaxIdOperation) {
+        this.bureauClient = bureauClient;
+        this.searchCompanyOperation = searchCompanyOperation;
+        this.validateTaxIdOperation = validateTaxIdOperation;
+    }
+
+    @Override
+    public List<ProviderOperation<?, ?>> getOperations() {
+        return List.of(searchCompanyOperation, validateTaxIdOperation);
+    }
+
+    // ... enrichment methods ...
+}
+```
+
+**What You Get Automatically:**
+- ✅ **REST Endpoints** - `GET /api/v1/enrichment/credit-bureau/operation/search-company`
+- ✅ **JSON Schema Generation** - Request/response schemas auto-generated from DTOs
+- ✅ **Type Safety** - Compile-time type checking for request/response
+- ✅ **Validation** - Automatic request validation via `validateRequest()` method
+- ✅ **Discovery** - `GET /api/v1/enrichment/credit-bureau/operations` lists all operations with schemas
+- ✅ **OpenAPI Docs** - Full Swagger documentation with examples
+
+**Typical Workflow:**
+```bash
+# Step 1: Discover available operations
+GET /api/v1/enrichment/credit-bureau/operations
+→ Returns: List of operations with JSON schemas and examples
+
+# Step 2: Search for company to get provider's internal ID
+POST /api/v1/enrichment/credit-bureau/operation/search-company
+{
+  "companyName": "Acme Corp",
+  "taxId": "TAX-123",
+  "minConfidence": 0.8
+}
+→ Returns: {"providerId": "PROV-12345", "companyName": "ACME CORP", "taxId": "TAX-123", "confidence": 0.95}
+
+# Step 3: Enrich data using the provider ID
+POST /api/v1/enrichment/credit-bureau/enrich
+{
+  "enrichmentType": "credit-report",
+  "strategy": "ENHANCE",
+  "sourceDto": {"companyId": "123", "name": "Acme Corp"},
+  "parameters": {"providerId": "PROV-12345"}
+}
+```
+
+**Benefits:**
 - ✅ Automatic distributed tracing with Micrometer
 - ✅ Metrics collection (execution time, success/failure rates, data sizes)
 - ✅ Circuit breaker, retry, rate limiting, and bulkhead patterns
@@ -652,42 +983,7 @@ public class FinancialDataEnricher
 - `getSupportedEnrichmentTypes()` - Return enrichment types this enricher supports
 - `getEnricherDescription()` - Return a description of what this enricher does
 
-**Option B: Extend AbstractResilientDataEnricher (More Control)**
-
-Use this if you need more control over the enrichment process:
-
-```java
-@Service
-public class CustomEnricher extends AbstractResilientDataEnricher {
-
-    public CustomEnricher(
-            JobTracingService tracingService,
-            JobMetricsService metricsService,
-            ResiliencyDecoratorService resiliencyService,
-            EnrichmentEventPublisher eventPublisher) {
-        super(tracingService, metricsService, resiliencyService, eventPublisher);
-    }
-
-    @Override
-    protected Mono<EnrichmentResponse> doEnrich(EnrichmentRequest request) {
-        // Full control over the enrichment process
-        // You must handle strategy application, response building, etc.
-        // See full example in docs/data-enrichment.md
-    }
-
-    @Override
-    public String getProviderName() {
-        return "Custom Provider";
-    }
-
-    @Override
-    public String[] getSupportedEnrichmentTypes() {
-        return new String[]{"custom-type"};
-    }
-}
-```
-
-### 6. Implement Data Enricher Controller (Recommended: Use AbstractDataEnricherController)
+### 5. Implement Data Enricher Controller (Recommended: Use AbstractDataEnricherController)
 
 **Option A: Extend AbstractDataEnricherController (Recommended)**
 
@@ -755,7 +1051,7 @@ public class CustomEnricherController {
 }
 ```
 
-### 7. Provider Discovery
+### 6. Provider Discovery
 
 The library automatically provides a global discovery endpoint to list all available enrichers:
 
@@ -1160,9 +1456,14 @@ firefly:
       # Event publishing for enrichment lifecycle events
       publish-events: true
 
-      # Caching configuration
-      cache-enabled: false
-      cache-ttl-seconds: 3600
+      # Caching configuration (requires lib-common-cache)
+      cache-enabled: true                # Enable caching (default: false)
+      cache-ttl-seconds: 3600            # Cache TTL in seconds (default: 3600 = 1 hour)
+
+      # Batch enrichment configuration
+      max-batch-size: 100                # Maximum requests per batch (default: 100)
+      batch-parallelism: 10              # Parallel processing level (default: 10)
+      batch-fail-fast: false             # Fail entire batch on first error (default: false)
 
       # Timeout configuration
       default-timeout-seconds: 30
@@ -1203,8 +1504,11 @@ firefly:
 
 - `enabled` - Enable/disable the data enrichment feature (default: `true`)
 - `publish-events` - Publish enrichment lifecycle events to EDA (default: `true`)
-- `cache-enabled` - Enable caching of enrichment results (default: `false`)
+- `cache-enabled` - Enable caching of enrichment results with tenant isolation (default: `false`, requires `lib-common-cache`)
 - `cache-ttl-seconds` - Cache time-to-live in seconds (default: `3600`)
+- `max-batch-size` - Maximum number of requests per batch (default: `100`)
+- `batch-parallelism` - Number of parallel requests in batch processing (default: `10`)
+- `batch-fail-fast` - Stop batch processing on first error (default: `false`)
 - `default-timeout-seconds` - Default timeout for provider calls (default: `30`)
 - `capture-raw-responses` - Capture raw provider responses for debugging (default: `false`)
 - `max-concurrent-enrichments` - Maximum concurrent enrichment operations (default: `100`)
@@ -1238,7 +1542,8 @@ When implementing `DataJobController`, the following REST endpoints are exposed:
 When implementing `AbstractDataEnricherController`, the following REST endpoints are exposed:
 
 **Per-Provider Endpoints:**
-- `POST /api/v1/enrichment/{provider-region-type}/enrich` - Enrich data using specific provider
+- `POST /api/v1/enrichment/{provider-region-type}/enrich` - Enrich single data request
+- `POST /api/v1/enrichment/{provider-region-type}/enrich/batch` ⭐ **NEW!** - Enrich multiple requests in parallel
 - `GET /api/v1/enrichment/{provider-region-type}/health` - Health check for specific provider
 - `GET /api/v1/enrichment/{provider-region-type}/operations` - List provider-specific operations
 - `GET|POST /api/v1/enrichment/{provider-region-type}/operation/{operationId}` - Execute provider-specific operation
@@ -1262,16 +1567,35 @@ POST /api/v1/enrichment/provider-a-spain-credit/enrich
 }
 ```
 
-**Example - Provider-Specific Operations:**
+**Example - Provider-Specific Custom Operations:**
 ```bash
-# List operations for a provider
+# List operations for a provider (with JSON schemas)
 GET /api/v1/enrichment/credit-bureau/operations
+→ Returns: {
+  "providerName": "Credit Bureau Provider",
+  "operations": [
+    {
+      "operationId": "search-company",
+      "path": "/api/v1/enrichment/credit-bureau/operation/search-company",
+      "method": "GET",
+      "description": "Search for a company by name or tax ID to obtain provider internal ID",
+      "tags": ["lookup", "search"],
+      "requestSchema": { ... JSON Schema ... },
+      "responseSchema": { ... JSON Schema ... },
+      "requestExample": { "companyName": "Acme Corp", "taxId": "A12345678" },
+      "responseExample": { "providerId": "PROV-12345", "confidence": 0.95 }
+    }
+  ]
+}
 
 # Search for company to get internal ID (before enrichment)
-GET /api/v1/enrichment/credit-bureau/operation/search-company?companyName=Acme&taxId=A12345678
-
-# Validate Tax ID
-GET /api/v1/enrichment/credit-bureau/operation/validate-tax-id?taxId=A12345678
+POST /api/v1/enrichment/credit-bureau/operation/search-company
+{
+  "companyName": "Acme Corp",
+  "taxId": "A12345678",
+  "minConfidence": 0.8
+}
+→ Returns: { "providerId": "PROV-12345", "companyName": "ACME CORP", "taxId": "A12345678", "confidence": 0.95 }
 
 # Then use the internal ID for enrichment
 POST /api/v1/enrichment/credit-bureau/enrich
@@ -1285,37 +1609,66 @@ POST /api/v1/enrichment/credit-bureau/enrich
 
 All endpoints are documented with OpenAPI/Swagger annotations.
 
-#### Provider-Specific Operations Catalog
+#### Provider-Specific Custom Operations
 
-Enrichers can expose auxiliary operations specific to the provider's API by implementing `ProviderOperationCatalog`:
+Enrichers can expose auxiliary operations specific to the provider's API using `@ProviderCustomOperation` annotation:
 
 ```java
-@Service
-public class CreditBureauEnricher
-        extends TypedDataEnricher<CompanyDTO, CreditBureauResponse, CompanyDTO>
-        implements ProviderOperationCatalog {
+// 1. Define DTOs
+public record CompanySearchRequest(
+    String companyName,
+    String taxId,
+    Double minConfidence
+) {}
 
-    @Override
-    public List<ProviderOperation> getOperationCatalog() {
-        return List.of(
-            ProviderOperation.builder()
-                .operationId("search-company")
-                .path("/search-company")
-                .method(RequestMethod.GET)
-                .description("Search for a company by name or tax ID to obtain provider internal ID")
-                .requestExample(Map.of("companyName", "Acme Corp", "taxId", "A12345678"))
-                .responseExample(Map.of("providerId", "PROV-12345", "confidence", 0.95))
-                .tags(new String[]{"lookup", "search"})
-                .build()
-        );
+public record CompanySearchResponse(
+    String providerId,
+    String companyName,
+    String taxId,
+    Double confidence
+) {}
+
+// 2. Create operation class
+@ProviderCustomOperation(
+    operationId = "search-company",
+    description = "Search for a company by name or tax ID to obtain provider internal ID",
+    method = RequestMethod.GET,
+    tags = {"lookup", "search"}
+)
+public class SearchCompanyOperation
+        extends AbstractProviderOperation<CompanySearchRequest, CompanySearchResponse> {
+
+    private final RestClient providerClient;
+
+    public SearchCompanyOperation(RestClient providerClient) {
+        this.providerClient = providerClient;
     }
 
     @Override
-    public Mono<Map<String, Object>> executeOperation(String operationId, Map<String, Object> params) {
-        return switch (operationId) {
-            case "search-company" -> searchCompany(params);
-            default -> Mono.error(new IllegalArgumentException("Unknown operation: " + operationId));
-        };
+    protected Mono<CompanySearchResponse> doExecute(CompanySearchRequest request) {
+        return providerClient.get("/search", CompanySearchResponse.class)
+            .withQueryParam("name", request.companyName())
+            .withQueryParam("taxId", request.taxId())
+            .execute();
+    }
+
+    @Override
+    protected void validateRequest(CompanySearchRequest request) {
+        if (request.companyName() == null && request.taxId() == null) {
+            throw new IllegalArgumentException("Either companyName or taxId must be provided");
+        }
+    }
+}
+
+// 3. Register in enricher
+@Service
+public class CreditBureauEnricher extends TypedDataEnricher<...> {
+
+    private final SearchCompanyOperation searchCompanyOperation;
+
+    @Override
+    public List<ProviderOperation<?, ?>> getOperations() {
+        return List.of(searchCompanyOperation);
     }
 }
 ```
@@ -1323,7 +1676,7 @@ public class CreditBureauEnricher
 **Common Use Cases:**
 - **ID Lookups**: Search for internal provider IDs before enrichment
 - **Entity Matching**: Fuzzy match companies/individuals in provider's database
-- **Validation**: Validate identifiers (CIF, DUNS, VAT, etc.)
+- **Validation**: Validate identifiers (tax IDs, business numbers, etc.)
 - **Metadata**: Retrieve provider-specific metadata or configuration
 
 ## Best Practices

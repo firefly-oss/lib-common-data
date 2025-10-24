@@ -194,8 +194,12 @@ public class CustomerProfileJobService extends AbstractResilientDataJobService {
             JobTracingService tracingService,
             JobMetricsService metricsService,
             ResiliencyDecoratorService resiliencyService,
+            JobEventPublisher eventPublisher,
+            JobAuditService auditService,
+            JobExecutionResultService resultService,
             JobOrchestrator jobOrchestrator) {
-        super(tracingService, metricsService, resiliencyService);
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
         this.jobOrchestrator = jobOrchestrator;
     }
 
@@ -283,8 +287,12 @@ public class CustomerOrdersJobService extends AbstractResilientDataJobService {
             JobTracingService tracingService,
             JobMetricsService metricsService,
             ResiliencyDecoratorService resiliencyService,
+            JobEventPublisher eventPublisher,
+            JobAuditService auditService,
+            JobExecutionResultService resultService,
             JobOrchestrator jobOrchestrator) {
-        super(tracingService, metricsService, resiliencyService);
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
         this.jobOrchestrator = jobOrchestrator;
     }
 
@@ -370,8 +378,12 @@ public class CustomerAnalyticsJobService extends AbstractResilientDataJobService
             JobTracingService tracingService,
             JobMetricsService metricsService,
             ResiliencyDecoratorService resiliencyService,
+            JobEventPublisher eventPublisher,
+            JobAuditService auditService,
+            JobExecutionResultService resultService,
             JobOrchestrator jobOrchestrator) {
-        super(tracingService, metricsService, resiliencyService);
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
         this.jobOrchestrator = jobOrchestrator;
     }
 

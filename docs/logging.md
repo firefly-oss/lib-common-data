@@ -24,20 +24,24 @@ The `AbstractResilientDataJobService` provides comprehensive logging for all job
 ```java
 @Service
 public class MyDataJobService extends AbstractResilientDataJobService {
-    
+
     public MyDataJobService(JobTracingService tracingService,
                            JobMetricsService metricsService,
-                           ResiliencyDecoratorService resiliencyService) {
-        super(tracingService, metricsService, resiliencyService);
+                           ResiliencyDecoratorService resiliencyService,
+                           JobEventPublisher eventPublisher,
+                           JobAuditService auditService,
+                           JobExecutionResultService resultService) {
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
     }
-    
+
     @Override
     protected Mono<JobStageResponse> doStartJob(JobStageRequest request) {
         // Your business logic here
         // Logging is handled automatically by the base class
         return Mono.just(JobStageResponse.success(JobStage.START, "exec-123", "Job started"));
     }
-    
+
     // Implement other methods...
 }
 ```

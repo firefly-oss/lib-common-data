@@ -245,13 +245,16 @@ JobStageResponse {
 public Mono<JobStageResponse> startJob(JobStageRequest request) {
     // 1. Validate parameters
     validateParameters(request.getParameters());
-    
+
     // 2. Create orchestrator request
     JobExecutionRequest executionRequest = JobExecutionRequest.builder()
-        .jobDefinition(request.getJobType())
+        .jobDefinition(getJobDefinition())  // Use the job definition from the service
         .input(request.getParameters())
+        .requestId(request.getRequestId())
+        .initiator(request.getInitiator())
+        .metadata(request.getMetadata())
         .build();
-    
+
     // 3. Start job via orchestrator
     return jobOrchestrator.startJob(executionRequest)
         .map(execution -> JobStageResponse.builder()

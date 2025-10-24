@@ -287,13 +287,17 @@ public class CustomerDataJobService extends AbstractResilientDataJobService {
     
     private final JobOrchestrator orchestrator;
     private final CustomerRepository repository;
-    
+
     public CustomerDataJobService(JobTracingService tracingService,
                                   JobMetricsService metricsService,
                                   ResiliencyDecoratorService resiliencyService,
+                                  JobEventPublisher eventPublisher,
+                                  JobAuditService auditService,
+                                  JobExecutionResultService resultService,
                                   JobOrchestrator orchestrator,
                                   CustomerRepository repository) {
-        super(tracingService, metricsService, resiliencyService);
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
         this.orchestrator = orchestrator;
         this.repository = repository;
     }

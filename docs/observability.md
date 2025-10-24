@@ -30,20 +30,24 @@ The library automatically creates traces for all job operations when using `Abst
 ```java
 @Service
 public class CustomerDataJobService extends AbstractResilientDataJobService {
-    
+
     public CustomerDataJobService(JobTracingService tracingService,
                                   JobMetricsService metricsService,
-                                  ResiliencyDecoratorService resiliencyService) {
-        super(tracingService, metricsService, resiliencyService);
+                                  ResiliencyDecoratorService resiliencyService,
+                                  JobEventPublisher eventPublisher,
+                                  JobAuditService auditService,
+                                  JobExecutionResultService resultService) {
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
     }
-    
+
     @Override
     protected Mono<JobStageResponse> doStartJob(JobStageRequest request) {
         // This method is automatically traced
         return orchestrator.startJob(buildExecutionRequest(request))
                 .map(execution -> JobStageResponse.success(/* ... */));
     }
-    
+
     // Other methods...
 }
 ```
@@ -481,13 +485,17 @@ public class CustomerDataJobService extends AbstractResilientDataJobService {
     
     private final JobOrchestrator orchestrator;
     private final CustomerRepository repository;
-    
+
     public CustomerDataJobService(JobTracingService tracingService,
                                   JobMetricsService metricsService,
                                   ResiliencyDecoratorService resiliencyService,
+                                  JobEventPublisher eventPublisher,
+                                  JobAuditService auditService,
+                                  JobExecutionResultService resultService,
                                   JobOrchestrator orchestrator,
                                   CustomerRepository repository) {
-        super(tracingService, metricsService, resiliencyService);
+        super(tracingService, metricsService, resiliencyService,
+              eventPublisher, auditService, resultService);
         this.orchestrator = orchestrator;
         this.repository = repository;
     }
