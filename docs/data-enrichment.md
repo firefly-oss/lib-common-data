@@ -703,14 +703,14 @@ public class CompanyService {
 
 ## Tutorial: Building a Professional Data Enricher
 
-This comprehensive tutorial will guide you through building a **production-ready data enricher** for Equifax Spain credit reports. You'll learn every aspect of creating a professional enricher with all best practices.
+This comprehensive tutorial will guide you through building a **production-ready data enricher** for credit reports from an external credit bureau provider. You'll learn every aspect of creating a professional enricher with all best practices.
 
 ### What We'll Build
 
-We're going to build a complete Equifax Spain credit report enricher that:
+We're going to build a complete credit report enricher that:
 
-- ✅ Fetches credit reports from Equifax Spain API
-- ✅ Handles provider-specific ID lookups (CIF → Equifax ID)
+- ✅ Fetches credit reports from a credit bureau provider API
+- ✅ Handles provider-specific ID lookups (Tax ID → Provider ID)
 - ✅ Implements provider-specific operations (search, validate, quick-lookup)
 - ✅ Includes full observability (tracing, metrics, logging)
 - ✅ Has automatic resiliency (circuit breaker, retry, rate limiting)
@@ -777,7 +777,7 @@ public class CreditReportDTO {
     // Company identification
     private String companyId;
     private String companyName;
-    private String cif;  // Spanish tax ID
+    private String taxId;  // Tax identification number
 
     // Credit information
     private Integer creditScore;
@@ -797,94 +797,94 @@ public class CreditReportDTO {
     // Metadata
     private String reportDate;
     private String dataSource;
-    private String equifaxId;  // Provider's internal ID
+    private String providerId;  // Provider's internal ID
 }
 ```
 
-#### 1.2 Provider Response DTO (Equifax's Format)
+#### 1.2 Provider Response DTO (Credit Bureau's Format)
 
 ```java
-package com.firefly.enricher.equifax.dto;
+package com.firefly.enricher.creditbureau.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 /**
- * Equifax Spain API response format.
- * This matches exactly what Equifax returns.
+ * Credit Bureau API response format.
+ * This matches exactly what the provider returns.
  */
 @Data
-public class EquifaxCreditReportResponse {
+public class CreditBureauReportResponse {
 
-    @JsonProperty("empresa_id")
-    private String empresaId;  // Equifax's internal ID
+    @JsonProperty("company_id")
+    private String companyId;  // Provider's internal ID
 
-    @JsonProperty("razon_social")
-    private String razonSocial;  // Company name
+    @JsonProperty("company_name")
+    private String companyName;
 
-    @JsonProperty("cif")
-    private String cif;
+    @JsonProperty("tax_id")
+    private String taxId;
 
-    @JsonProperty("puntuacion_credito")
-    private Integer puntuacionCredito;  // Credit score
+    @JsonProperty("credit_score")
+    private Integer creditScore;
 
-    @JsonProperty("calificacion")
-    private String calificacion;  // Rating
+    @JsonProperty("rating")
+    private String rating;
 
-    @JsonProperty("nivel_riesgo")
-    private String nivelRiesgo;  // Risk level
+    @JsonProperty("risk_level")
+    private String riskLevel;
 
-    @JsonProperty("facturacion_anual")
-    private Double facturacionAnual;
+    @JsonProperty("annual_revenue")
+    private Double annualRevenue;
 
-    @JsonProperty("deuda_total")
-    private Double deudaTotal;
+    @JsonProperty("total_debt")
+    private Double totalDebt;
 
-    @JsonProperty("ratio_liquidez")
-    private Double ratioLiquidez;
+    @JsonProperty("liquidity_ratio")
+    private Double liquidityRatio;
 
-    @JsonProperty("dias_pago_medio")
-    private Integer diasPagoMedio;
+    @JsonProperty("days_payable_outstanding")
+    private Integer daysPayableOutstanding;
 
-    @JsonProperty("porcentaje_retrasos")
-    private Double porcentajeRetrasos;
+    @JsonProperty("payment_delay_percentage")
+    private Double paymentDelayPercentage;
 
-    @JsonProperty("numero_impagos")
-    private Integer numeroImpagos;
+    @JsonProperty("number_of_defaults")
+    private Integer numberOfDefaults;
 
-    @JsonProperty("fecha_informe")
-    private String fechaInforme;
+    @JsonProperty("report_date")
+    private String reportDate;
 }
 ```
 
 #### 1.3 Search Response DTO (For ID Lookup)
 
 ```java
-package com.firefly.enricher.equifax.dto;
+package com.firefly.enricher.creditbureau.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 /**
- * Response from Equifax company search endpoint.
+ * Response from credit bureau company search endpoint.
  */
 @Data
-public class EquifaxSearchResponse {
+public class CompanySearchResponse {
 
-    @JsonProperty("empresa_id")
-    private String empresaId;
+    @JsonProperty("company_id")
+    private String companyId;
 
-    @JsonProperty("razon_social")
-    private String razonSocial;
+    @JsonProperty("company_name")
+    private String companyName;
 
-    @JsonProperty("cif")
-    private String cif;
+    @JsonProperty("tax_id")
+    private String taxId;
 
-    @JsonProperty("confianza")
-    private Double confianza;  // Match confidence (0.0 - 1.0)
+    @JsonProperty("match_confidence")
+    private Double matchConfidence;  // Match confidence (0.0 - 1.0)
 
-    @JsonProperty("activa")
-    private Boolean activa;  // Is company active?
+    @JsonProperty("is_active")
+    private Boolean isActive;  // Is company active?
 }
 ```
 
@@ -895,7 +895,7 @@ public class EquifaxSearchResponse {
 Now create the enricher that implements the business logic.
 
 ```java
-package com.firefly.enricher.equifax;
+package com.firefly.enricher.creditbureau;
 
 import com.firefly.common.client.ServiceClient;
 import com.firefly.common.client.rest.RestClient;
@@ -908,8 +908,8 @@ import com.firefly.common.data.observability.JobTracingService;
 import com.firefly.common.data.resiliency.ResiliencyDecoratorService;
 import com.firefly.common.data.service.TypedDataEnricher;
 import com.firefly.customer.dto.CreditReportDTO;
-import com.firefly.enricher.equifax.dto.EquifaxCreditReportResponse;
-import com.firefly.enricher.equifax.dto.EquifaxSearchResponse;
+import com.firefly.enricher.creditbureau.dto.CreditBureauReportResponse;
+import com.firefly.enricher.creditbureau.dto.CompanySearchResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -921,7 +921,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Professional Equifax Spain credit report enricher.
+ * Professional credit bureau report enricher.
  *
  * <p>This enricher demonstrates all best practices:</p>
  * <ul>
@@ -934,13 +934,13 @@ import java.util.Map;
  */
 @Slf4j
 @Service
-public class EquifaxSpainCreditEnricher
-        extends TypedDataEnricher<CreditReportDTO, EquifaxCreditReportResponse, CreditReportDTO>
+public class CreditBureauEnricher
+        extends TypedDataEnricher<CreditReportDTO, CreditBureauReportResponse, CreditReportDTO>
         implements ProviderOperationCatalog {
 
-    private final RestClient equifaxClient;
+    private final RestClient bureauClient;
 
-    @Value("${equifax.spain.api.key}")
+    @Value("${credit.bureau.api.key}")
     private String apiKey;
 
     /**
@@ -949,30 +949,30 @@ public class EquifaxSpainCreditEnricher
      * <p>All observability and resiliency services are injected automatically
      * by Spring and passed to the parent class.</p>
      */
-    public EquifaxSpainCreditEnricher(
+    public CreditBureauEnricher(
             JobTracingService tracingService,
             JobMetricsService metricsService,
             ResiliencyDecoratorService resiliencyService,
             EnrichmentEventPublisher eventPublisher,
-            @Value("${equifax.spain.base-url}") String baseUrl) {
+            @Value("${credit.bureau.base-url}") String baseUrl) {
 
         super(tracingService, metricsService, resiliencyService, eventPublisher, CreditReportDTO.class);
 
         // Create REST client using lib-common-client
-        this.equifaxClient = ServiceClient.rest("equifax-spain")
+        this.bureauClient = ServiceClient.rest("credit-bureau")
             .baseUrl(baseUrl)
             .defaultHeader("X-API-Key", apiKey)
             .defaultHeader("Accept", "application/json")
             .timeout(Duration.ofSeconds(30))
             .build();
 
-        log.info("Initialized Equifax Spain Credit Enricher with base URL: {}", baseUrl);
+        log.info("Initialized Credit Bureau Enricher with base URL: {}", baseUrl);
     }
 
     // ========== CORE ENRICHMENT METHODS ==========
 
     /**
-     * Step 1: Fetch credit report from Equifax API.
+     * Step 1: Fetch credit report from credit bureau API.
      *
      * <p>This method is called by the framework. You just need to:</p>
      * <ol>
@@ -991,55 +991,55 @@ public class EquifaxSpainCreditEnricher
      * </ul>
      */
     @Override
-    protected Mono<EquifaxCreditReportResponse> fetchProviderData(EnrichmentRequest request) {
+    protected Mono<CreditBureauReportResponse> fetchProviderData(EnrichmentRequest request) {
         // Extract required parameter
-        String equifaxId = request.requireParam("equifaxId");
+        String providerId = request.requireParam("providerId");
 
-        log.debug("Fetching credit report from Equifax for ID: {}", equifaxId);
+        log.debug("Fetching credit report from credit bureau for ID: {}", providerId);
 
-        // Call Equifax API
-        return equifaxClient.get("/v2/informes-credito/{id}", EquifaxCreditReportResponse.class)
-            .withPathParam("id", equifaxId)
+        // Call credit bureau API
+        return bureauClient.get("/api/v1/credit-reports/{id}", CreditBureauReportResponse.class)
+            .withPathParam("id", providerId)
             .execute()
             .doOnSuccess(response ->
-                log.debug("Successfully fetched credit report for Equifax ID: {}", equifaxId))
+                log.debug("Successfully fetched credit report for provider ID: {}", providerId))
             .doOnError(error ->
-                log.error("Failed to fetch credit report from Equifax for ID: {}", equifaxId, error));
+                log.error("Failed to fetch credit report from credit bureau for ID: {}", providerId, error));
     }
 
     /**
-     * Step 2: Map Equifax response to your application's DTO format.
+     * Step 2: Map credit bureau response to your application's DTO format.
      *
      * <p>This method converts the provider's format to your format.
      * The framework will then automatically apply the enrichment strategy
      * (ENHANCE/MERGE/REPLACE/RAW) to combine this with the source DTO.</p>
      */
     @Override
-    protected CreditReportDTO mapToTarget(EquifaxCreditReportResponse providerData) {
+    protected CreditReportDTO mapToTarget(CreditBureauReportResponse providerData) {
         return CreditReportDTO.builder()
             // Company identification
-            .equifaxId(providerData.getEmpresaId())
-            .companyName(providerData.getRazonSocial())
-            .cif(providerData.getCif())
+            .providerId(providerData.getCompanyId())
+            .companyName(providerData.getCompanyName())
+            .taxId(providerData.getTaxId())
 
             // Credit information
-            .creditScore(providerData.getPuntuacionCredito())
-            .creditRating(providerData.getCalificacion())
-            .riskLevel(mapRiskLevel(providerData.getNivelRiesgo()))
+            .creditScore(providerData.getCreditScore())
+            .creditRating(providerData.getRating())
+            .riskLevel(mapRiskLevel(providerData.getRiskLevel()))
 
             // Financial data
-            .annualRevenue(providerData.getFacturacionAnual())
-            .totalDebt(providerData.getDeudaTotal())
-            .liquidityRatio(providerData.getRatioLiquidez())
+            .annualRevenue(providerData.getAnnualRevenue())
+            .totalDebt(providerData.getTotalDebt())
+            .liquidityRatio(providerData.getLiquidityRatio())
 
             // Payment behavior
-            .daysPayableOutstanding(providerData.getDiasPagoMedio())
-            .paymentDelayPercentage(providerData.getPorcentajeRetrasos())
-            .numberOfDefaults(providerData.getNumeroImpagos())
+            .daysPayableOutstanding(providerData.getDaysPayableOutstanding())
+            .paymentDelayPercentage(providerData.getPaymentDelayPercentage())
+            .numberOfDefaults(providerData.getNumberOfDefaults())
 
             // Metadata
-            .reportDate(providerData.getFechaInforme())
-            .dataSource("Equifax Spain")
+            .reportDate(providerData.getReportDate())
+            .dataSource("Credit Bureau Provider")
             .build();
     }
 
@@ -1054,21 +1054,21 @@ public class EquifaxSpainCreditEnricher
     @Override
     public List<ProviderOperation> getOperationCatalog() {
         return List.of(
-            // Operation 1: Search company by name/CIF to get Equifax ID
+            // Operation 1: Search company by name/tax ID to get provider ID
             ProviderOperation.builder()
                 .operationId("search-company")
                 .path("/search-company")
                 .method(RequestMethod.GET)
-                .description("Search for a company by name or CIF to obtain Equifax internal ID. " +
+                .description("Search for a company by name or tax ID to obtain provider internal ID. " +
                            "This is typically the first step before enrichment.")
                 .requestExample(Map.of(
-                    "companyName", "ACME CORPORATION SL",
-                    "cif", "A12345678"
+                    "companyName", "ACME CORPORATION",
+                    "taxId", "TAX-12345678"
                 ))
                 .responseExample(Map.of(
-                    "equifaxId", "ES-12345",
-                    "companyName", "ACME CORPORATION SL",
-                    "cif", "A12345678",
+                    "providerId", "PROV-12345",
+                    "companyName", "ACME CORPORATION",
+                    "taxId", "TAX-12345678",
                     "confidence", 0.95,
                     "active", true
                 ))
@@ -1076,17 +1076,17 @@ public class EquifaxSpainCreditEnricher
                 .requiresAuth(true)
                 .build(),
 
-            // Operation 2: Validate CIF
+            // Operation 2: Validate Tax ID
             ProviderOperation.builder()
-                .operationId("validate-cif")
-                .path("/validate-cif")
+                .operationId("validate-tax-id")
+                .path("/validate-tax-id")
                 .method(RequestMethod.GET)
-                .description("Validate that a CIF (Spanish tax ID) exists in Equifax database")
-                .requestExample(Map.of("cif", "A12345678"))
+                .description("Validate that a tax ID exists in credit bureau database")
+                .requestExample(Map.of("taxId", "TAX-12345678"))
                 .responseExample(Map.of(
                     "valid", true,
-                    "equifaxId", "ES-12345",
-                    "companyName", "ACME CORPORATION SL"
+                    "providerId", "PROV-12345",
+                    "companyName", "ACME CORPORATION"
                 ))
                 .tags(new String[]{"validation"})
                 .requiresAuth(true)
@@ -1099,7 +1099,7 @@ public class EquifaxSpainCreditEnricher
                 .method(RequestMethod.POST)
                 .description("Get just the credit score without full enrichment data. " +
                            "Faster and cheaper than full credit report.")
-                .requestExample(Map.of("equifaxId", "ES-12345"))
+                .requestExample(Map.of("providerId", "PROV-12345"))
                 .responseExample(Map.of(
                     "creditScore", 750,
                     "creditRating", "AAA",
@@ -1120,81 +1120,81 @@ public class EquifaxSpainCreditEnricher
      */
     @Override
     public Mono<Map<String, Object>> executeOperation(String operationId, Map<String, Object> parameters) {
-        log.info("Executing Equifax operation: {} with parameters: {}", operationId, parameters);
+        log.info("Executing credit bureau operation: {} with parameters: {}", operationId, parameters);
 
         return switch (operationId) {
             case "search-company" -> searchCompany(parameters);
-            case "validate-cif" -> validateCif(parameters);
+            case "validate-tax-id" -> validateTaxId(parameters);
             case "get-credit-score" -> getCreditScore(parameters);
             default -> Mono.error(new IllegalArgumentException(
-                "Unknown operation: " + operationId + ". Available operations: search-company, validate-cif, get-credit-score"));
+                "Unknown operation: " + operationId + ". Available operations: search-company, validate-tax-id, get-credit-score"));
         };
     }
 
     // ========== OPERATION IMPLEMENTATIONS ==========
 
     /**
-     * Search for a company in Equifax database.
+     * Search for a company in credit bureau database.
      */
     private Mono<Map<String, Object>> searchCompany(Map<String, Object> params) {
         String companyName = (String) params.get("companyName");
-        String cif = (String) params.get("cif");
+        String taxId = (String) params.get("taxId");
 
         // Validate parameters
-        if (companyName == null && cif == null) {
+        if (companyName == null && taxId == null) {
             return Mono.error(new IllegalArgumentException(
-                "Either 'companyName' or 'cif' parameter is required"));
+                "Either 'companyName' or 'taxId' parameter is required"));
         }
 
-        log.debug("Searching Equifax for company: name={}, cif={}", companyName, cif);
+        log.debug("Searching credit bureau for company: name={}, taxId={}", companyName, taxId);
 
         // Build query parameters
-        var queryBuilder = equifaxClient.get("/v2/empresas/buscar", EquifaxSearchResponse.class);
+        var queryBuilder = bureauClient.get("/api/v1/companies/search", CompanySearchResponse.class);
         if (companyName != null) {
-            queryBuilder.withQueryParam("razon_social", companyName);
+            queryBuilder.withQueryParam("name", companyName);
         }
-        if (cif != null) {
-            queryBuilder.withQueryParam("cif", cif);
+        if (taxId != null) {
+            queryBuilder.withQueryParam("tax_id", taxId);
         }
 
         return queryBuilder.execute()
             .map(result -> Map.of(
-                "equifaxId", result.getEmpresaId(),
-                "companyName", result.getRazonSocial(),
-                "cif", result.getCif(),
-                "confidence", result.getConfianza(),
-                "active", result.getActiva()
+                "providerId", result.getCompanyId(),
+                "companyName", result.getCompanyName(),
+                "taxId", result.getTaxId(),
+                "confidence", result.getMatchConfidence(),
+                "active", result.getIsActive()
             ))
             .doOnSuccess(result ->
-                log.info("Found company in Equifax: equifaxId={}, confidence={}",
-                    result.get("equifaxId"), result.get("confidence")))
+                log.info("Found company in credit bureau: providerId={}, confidence={}",
+                    result.get("providerId"), result.get("confidence")))
             .doOnError(error ->
-                log.error("Failed to search company in Equifax: name={}, cif={}",
-                    companyName, cif, error));
+                log.error("Failed to search company in credit bureau: name={}, taxId={}",
+                    companyName, taxId, error));
     }
 
     /**
-     * Validate a CIF in Equifax database.
+     * Validate a tax ID in credit bureau database.
      */
-    private Mono<Map<String, Object>> validateCif(Map<String, Object> params) {
-        String cif = (String) params.get("cif");
+    private Mono<Map<String, Object>> validateTaxId(Map<String, Object> params) {
+        String taxId = (String) params.get("taxId");
 
-        if (cif == null || cif.isBlank()) {
-            return Mono.error(new IllegalArgumentException("Parameter 'cif' is required"));
+        if (taxId == null || taxId.isBlank()) {
+            return Mono.error(new IllegalArgumentException("Parameter 'taxId' is required"));
         }
 
-        log.debug("Validating CIF in Equifax: {}", cif);
+        log.debug("Validating tax ID in credit bureau: {}", taxId);
 
-        return equifaxClient.get("/v2/empresas/validar-cif", EquifaxSearchResponse.class)
-            .withQueryParam("cif", cif)
+        return bureauClient.get("/api/v1/companies/validate", CompanySearchResponse.class)
+            .withQueryParam("tax_id", taxId)
             .execute()
             .map(result -> Map.of(
                 "valid", true,
-                "equifaxId", result.getEmpresaId(),
-                "companyName", result.getRazonSocial()
+                "providerId", result.getCompanyId(),
+                "companyName", result.getCompanyName()
             ))
             .onErrorResume(error -> {
-                log.warn("CIF validation failed: {}", cif);
+                log.warn("Tax ID validation failed: {}", taxId);
                 return Mono.just(Map.of("valid", false));
             });
     }
@@ -1203,34 +1203,34 @@ public class EquifaxSpainCreditEnricher
      * Get credit score only (quick lookup).
      */
     private Mono<Map<String, Object>> getCreditScore(Map<String, Object> params) {
-        String equifaxId = (String) params.get("equifaxId");
+        String providerId = (String) params.get("providerId");
 
-        if (equifaxId == null || equifaxId.isBlank()) {
-            return Mono.error(new IllegalArgumentException("Parameter 'equifaxId' is required"));
+        if (providerId == null || providerId.isBlank()) {
+            return Mono.error(new IllegalArgumentException("Parameter 'providerId' is required"));
         }
 
-        log.debug("Fetching credit score from Equifax for ID: {}", equifaxId);
+        log.debug("Fetching credit score from credit bureau for ID: {}", providerId);
 
-        return equifaxClient.get("/v2/puntuacion-credito/{id}", Map.class)
-            .withPathParam("id", equifaxId)
+        return bureauClient.get("/api/v1/credit-scores/{id}", Map.class)
+            .withPathParam("id", providerId)
             .execute()
             .map(result -> Map.of(
-                "creditScore", result.get("puntuacion"),
-                "creditRating", result.get("calificacion"),
-                "riskLevel", mapRiskLevel((String) result.get("nivel_riesgo")),
-                "lastUpdated", result.get("fecha_actualizacion"),
-                "equifaxId", equifaxId
+                "creditScore", result.get("score"),
+                "creditRating", result.get("rating"),
+                "riskLevel", mapRiskLevel((String) result.get("risk_level")),
+                "lastUpdated", result.get("last_updated"),
+                "providerId", providerId
             ))
             .doOnSuccess(result ->
-                log.info("Retrieved credit score: equifaxId={}, score={}",
-                    equifaxId, result.get("creditScore")));
+                log.info("Retrieved credit score: providerId={}, score={}",
+                    providerId, result.get("creditScore")));
     }
 
     // ========== METADATA METHODS ==========
 
     @Override
     public String getProviderName() {
-        return "Equifax Spain";
+        return "Credit Bureau Provider";
     }
 
     @Override
@@ -1240,25 +1240,25 @@ public class EquifaxSpainCreditEnricher
 
     @Override
     public String getEnricherDescription() {
-        return "Equifax Spain credit report and risk assessment enrichment service. " +
+        return "Credit bureau report and risk assessment enrichment service. " +
                "Provides comprehensive credit information, payment behavior analysis, " +
-               "and risk scoring for Spanish companies.";
+               "and risk scoring for companies.";
     }
 
     // ========== HELPER METHODS ==========
 
     /**
-     * Maps Equifax risk level codes to standardized values.
+     * Maps provider risk level codes to standardized values.
      */
-    private String mapRiskLevel(String equifaxRiskLevel) {
-        if (equifaxRiskLevel == null) {
+    private String mapRiskLevel(String providerRiskLevel) {
+        if (providerRiskLevel == null) {
             return "UNKNOWN";
         }
 
-        return switch (equifaxRiskLevel.toUpperCase()) {
-            case "BAJO", "MUY_BAJO" -> "LOW";
-            case "MEDIO" -> "MEDIUM";
-            case "ALTO", "MUY_ALTO" -> "HIGH";
+        return switch (providerRiskLevel.toUpperCase()) {
+            case "LOW", "VERY_LOW" -> "LOW";
+            case "MEDIUM", "MODERATE" -> "MEDIUM";
+            case "HIGH", "VERY_HIGH" -> "HIGH";
             default -> "UNKNOWN";
         };
     }
@@ -1272,7 +1272,7 @@ public class EquifaxSpainCreditEnricher
 The controller exposes your enricher as REST endpoints.
 
 ```java
-package com.firefly.enricher.equifax;
+package com.firefly.enricher.creditbureau;
 
 import com.firefly.common.data.controller.AbstractDataEnricherController;
 import com.firefly.common.data.service.DataEnricher;
@@ -1283,30 +1283,28 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * REST controller for Equifax Spain credit enrichment.
+ * REST controller for credit bureau enrichment.
  *
  * <p>This controller automatically exposes the following endpoints:</p>
  * <ul>
- *   <li>POST /api/v1/enrichment/equifax-spain-credit/enrich - Main enrichment endpoint</li>
- *   <li>GET  /api/v1/enrichment/equifax-spain-credit/health - Health check</li>
- *   <li>GET  /api/v1/enrichment/equifax-spain-credit/operations - List operations</li>
- *   <li>GET  /api/v1/enrichment/equifax-spain-credit/search-company - Search company</li>
- *   <li>GET  /api/v1/enrichment/equifax-spain-credit/validate-cif - Validate CIF</li>
- *   <li>POST /api/v1/enrichment/equifax-spain-credit/credit-score - Get credit score</li>
+ *   <li>POST /api/v1/enrichment/credit-bureau/enrich - Main enrichment endpoint</li>
+ *   <li>GET  /api/v1/enrichment/credit-bureau/health - Health check</li>
+ *   <li>GET  /api/v1/enrichment/credit-bureau/operations - List operations</li>
+ *   <li>GET  /api/v1/enrichment/credit-bureau/search-company - Search company</li>
+ *   <li>GET  /api/v1/enrichment/credit-bureau/validate-tax-id - Validate tax ID</li>
+ *   <li>POST /api/v1/enrichment/credit-bureau/credit-score - Get credit score</li>
  * </ul>
  *
- * <p><b>URL Pattern:</b> {@code /api/v1/enrichment/{provider}-{region}-{type}}</p>
+ * <p><b>URL Pattern:</b> {@code /api/v1/enrichment/{provider-name}}</p>
  * <ul>
- *   <li><b>provider:</b> equifax</li>
- *   <li><b>region:</b> spain</li>
- *   <li><b>type:</b> credit</li>
+ *   <li><b>provider:</b> credit-bureau</li>
  * </ul>
  */
 @RestController
-@RequestMapping("/api/v1/enrichment/equifax-spain-credit")
-@Tag(name = "Data Enrichment - Equifax Spain Credit",
-     description = "Equifax Spain credit report and risk assessment enrichment")
-public class EquifaxSpainCreditController extends AbstractDataEnricherController {
+@RequestMapping("/api/v1/enrichment/credit-bureau")
+@Tag(name = "Data Enrichment - Credit Bureau",
+     description = "Credit bureau report and risk assessment enrichment")
+public class CreditBureauController extends AbstractDataEnricherController {
 
     /**
      * Constructor with dependency injection.
@@ -1314,11 +1312,11 @@ public class EquifaxSpainCreditController extends AbstractDataEnricherController
      * <p>The enricher is injected by qualifier to ensure we get the correct one
      * when multiple enrichers are registered.</p>
      *
-     * @param enricher the Equifax Spain credit enricher
+     * @param enricher the credit bureau enricher
      * @param registry the enricher registry (for discovery)
      */
-    public EquifaxSpainCreditController(
-            @Qualifier("equifaxSpainCreditEnricher") DataEnricher enricher,
+    public CreditBureauController(
+            @Qualifier("creditBureauEnricher") DataEnricher enricher,
             DataEnricherRegistry registry) {
         super(enricher, registry);
     }
@@ -1347,7 +1345,7 @@ public class EquifaxSpainCreditController extends AbstractDataEnricherController
 
 **Key Points:**
 
-- ✅ **URL Pattern**: `{provider}-{region}-{type}` (e.g., `equifax-spain-credit`)
+- ✅ **URL Pattern**: `{provider-name}` (e.g., `credit-bureau`)
 - ✅ **One Controller Per Enricher**: Each enricher has its own dedicated controller
 - ✅ **No Routing Logic**: The enricher is injected directly - no routing needed
 - ✅ **Automatic Endpoint Registration**: The controller registers its path with the enricher
@@ -1358,14 +1356,14 @@ public class EquifaxSpainCreditController extends AbstractDataEnricherController
 
 ### Step 4: Add Configuration
 
-Create configuration properties for Equifax.
+Create configuration properties for the credit bureau provider.
 
 ```yaml
 # application.yml
-equifax:
-  spain:
-    base-url: https://api.equifax.es
-    api-key: ${EQUIFAX_SPAIN_API_KEY}  # From environment variable
+credit:
+  bureau:
+    base-url: https://api.credit-bureau-provider.com
+    api-key: ${CREDIT_BUREAU_API_KEY}  # From environment variable
     timeout-seconds: 30
 
 firefly:
@@ -1421,8 +1419,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("Equifax Spain Credit Enricher Tests")
-class EquifaxSpainCreditEnricherTest {
+@DisplayName("Credit Bureau Enricher Tests")
+class CreditBureauEnricherTest {
 
     @Mock
     private JobTracingService tracingService;
@@ -1436,7 +1434,7 @@ class EquifaxSpainCreditEnricherTest {
     @Mock
     private EnrichmentEventPublisher eventPublisher;
 
-    private EquifaxSpainCreditEnricher enricher;
+    private CreditBureauEnricher enricher;
 
     @BeforeEach
     void setUp() {
@@ -1444,12 +1442,12 @@ class EquifaxSpainCreditEnricherTest {
         when(resiliencyService.decorateSupplier(any(), any()))
             .thenAnswer(invocation -> invocation.getArgument(1));
 
-        enricher = new EquifaxSpainCreditEnricher(
+        enricher = new CreditBureauEnricher(
             tracingService,
             metricsService,
             resiliencyService,
             eventPublisher,
-            "https://api.equifax.es"
+            "https://api.credit-bureau-provider.com"
         );
     }
 
@@ -1467,7 +1465,7 @@ class EquifaxSpainCreditEnricherTest {
             .enrichmentType("credit-report")
             .strategy(EnrichmentStrategy.ENHANCE)
             .sourceDto(sourceDto)
-            .parameters(Map.of("equifaxId", "ES-12345"))
+            .parameters(Map.of("providerId", "PROV-12345"))
             .requestId("test-request-001")
             .build();
 
@@ -1478,27 +1476,27 @@ class EquifaxSpainCreditEnricherTest {
         StepVerifier.create(result)
             .assertNext(response -> {
                 assertThat(response.isSuccess()).isTrue();
-                assertThat(response.getProviderName()).isEqualTo("Equifax Spain");
+                assertThat(response.getProviderName()).isEqualTo("Credit Bureau Provider");
                 assertThat(response.getEnrichmentType()).isEqualTo("credit-report");
 
                 CreditReportDTO enrichedData = (CreditReportDTO) response.getEnrichedData();
                 assertThat(enrichedData.getCompanyId()).isEqualTo("12345");
                 assertThat(enrichedData.getCompanyName()).isEqualTo("ACME CORP");
                 assertThat(enrichedData.getCreditScore()).isNotNull();
-                assertThat(enrichedData.getDataSource()).isEqualTo("Equifax Spain");
+                assertThat(enrichedData.getDataSource()).isEqualTo("Credit Bureau Provider");
             })
             .verifyComplete();
     }
 
     @Test
-    @DisplayName("Should return error when equifaxId parameter is missing")
-    void shouldReturnErrorWhenEquifaxIdMissing() {
+    @DisplayName("Should return error when providerId parameter is missing")
+    void shouldReturnErrorWhenProviderIdMissing() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
             .enrichmentType("credit-report")
             .strategy(EnrichmentStrategy.ENHANCE)
             .sourceDto(new CreditReportDTO())
-            .parameters(Map.of())  // Missing equifaxId
+            .parameters(Map.of())  // Missing providerId
             .build();
 
         // When
@@ -1508,7 +1506,7 @@ class EquifaxSpainCreditEnricherTest {
         StepVerifier.create(result)
             .assertNext(response -> {
                 assertThat(response.isSuccess()).isFalse();
-                assertThat(response.getMessage()).contains("equifaxId");
+                assertThat(response.getMessage()).contains("providerId");
             })
             .verifyComplete();
     }
@@ -1519,7 +1517,7 @@ class EquifaxSpainCreditEnricherTest {
         // Given
         Map<String, Object> params = Map.of(
             "companyName", "ACME CORPORATION",
-            "cif", "A12345678"
+            "taxId", "TAX-12345678"
         );
 
         // When
@@ -1528,44 +1526,44 @@ class EquifaxSpainCreditEnricherTest {
         // Then
         StepVerifier.create(result)
             .assertNext(response -> {
-                assertThat(response).containsKeys("equifaxId", "companyName", "cif", "confidence");
-                assertThat(response.get("equifaxId")).isNotNull();
+                assertThat(response).containsKeys("providerId", "companyName", "taxId", "confidence");
+                assertThat(response.get("providerId")).isNotNull();
             })
             .verifyComplete();
     }
 
     @Test
-    @DisplayName("Should map Equifax response to target DTO correctly")
-    void shouldMapEquifaxResponseToTargetDto() {
+    @DisplayName("Should map credit bureau response to target DTO correctly")
+    void shouldMapCreditBureauResponseToTargetDto() {
         // Given
-        EquifaxCreditReportResponse providerData = new EquifaxCreditReportResponse();
-        providerData.setEmpresaId("ES-12345");
-        providerData.setRazonSocial("ACME CORPORATION SL");
-        providerData.setCif("A12345678");
-        providerData.setPuntuacionCredito(750);
-        providerData.setCalificacion("AAA");
-        providerData.setNivelRiesgo("BAJO");
+        CreditBureauReportResponse providerData = new CreditBureauReportResponse();
+        providerData.setCompanyId("PROV-12345");
+        providerData.setCompanyName("ACME CORPORATION");
+        providerData.setTaxId("TAX-12345678");
+        providerData.setCreditScore(750);
+        providerData.setRating("AAA");
+        providerData.setRiskLevel("LOW");
 
         // When
         CreditReportDTO result = enricher.mapToTarget(providerData);
 
         // Then
-        assertThat(result.getEquifaxId()).isEqualTo("ES-12345");
-        assertThat(result.getCompanyName()).isEqualTo("ACME CORPORATION SL");
-        assertThat(result.getCif()).isEqualTo("A12345678");
+        assertThat(result.getProviderId()).isEqualTo("PROV-12345");
+        assertThat(result.getCompanyName()).isEqualTo("ACME CORPORATION");
+        assertThat(result.getTaxId()).isEqualTo("TAX-12345678");
         assertThat(result.getCreditScore()).isEqualTo(750);
         assertThat(result.getCreditRating()).isEqualTo("AAA");
         assertThat(result.getRiskLevel()).isEqualTo("LOW");
-        assertThat(result.getDataSource()).isEqualTo("Equifax Spain");
+        assertThat(result.getDataSource()).isEqualTo("Credit Bureau Provider");
     }
 
     @Test
     @DisplayName("Should have correct provider metadata")
     void shouldHaveCorrectProviderMetadata() {
-        assertThat(enricher.getProviderName()).isEqualTo("Equifax Spain");
+        assertThat(enricher.getProviderName()).isEqualTo("Credit Bureau Provider");
         assertThat(enricher.getSupportedEnrichmentTypes())
             .containsExactlyInAnyOrder("credit-report", "credit-score", "company-risk");
-        assertThat(enricher.getEnricherDescription()).contains("Equifax Spain");
+        assertThat(enricher.getEnricherDescription()).contains("Credit Bureau Provider");
     }
 
     @Test
@@ -1603,32 +1601,32 @@ Response:
 {
   "providers": [
     {
-      "providerName": "Equifax Spain",
+      "providerName": "Credit Bureau Provider",
       "supportedTypes": ["credit-report", "credit-score", "company-risk"],
-      "description": "Equifax Spain credit report and risk assessment enrichment service...",
+      "description": "Credit bureau report and risk assessment enrichment service...",
       "endpoints": [
-        "/api/v1/enrichment/equifax-spain-credit/enrich"
+        "/api/v1/enrichment/credit-bureau/enrich"
       ],
       "operations": [
         {
           "operationId": "search-company",
-          "path": "/api/v1/enrichment/equifax-spain-credit/search-company",
+          "path": "/api/v1/enrichment/credit-bureau/search-company",
           "method": "GET",
-          "description": "Search for a company by name or CIF to obtain Equifax internal ID...",
+          "description": "Search for a company by name or tax ID to obtain provider internal ID...",
           "tags": ["lookup", "search", "prerequisite"],
           "requiresAuth": true
         },
         {
-          "operationId": "validate-cif",
-          "path": "/api/v1/enrichment/equifax-spain-credit/validate-cif",
+          "operationId": "validate-tax-id",
+          "path": "/api/v1/enrichment/credit-bureau/validate-tax-id",
           "method": "GET",
-          "description": "Validate that a CIF (Spanish tax ID) exists in Equifax database",
+          "description": "Validate that a tax ID exists in credit bureau database",
           "tags": ["validation"],
           "requiresAuth": true
         },
         {
           "operationId": "get-credit-score",
-          "path": "/api/v1/enrichment/equifax-spain-credit/credit-score",
+          "path": "/api/v1/enrichment/credit-bureau/credit-score",
           "method": "POST",
           "description": "Get just the credit score without full enrichment data...",
           "tags": ["credit", "quick-lookup"],
@@ -1640,18 +1638,18 @@ Response:
 }
 ```
 
-#### 6.3 Search for Company (Get Equifax ID)
+#### 6.3 Search for Company (Get Provider ID)
 
 ```bash
-curl -X GET "http://localhost:8080/api/v1/enrichment/equifax-spain-credit/search-company?companyName=ACME%20CORP&cif=A12345678"
+curl -X GET "http://localhost:8080/api/v1/enrichment/credit-bureau/search-company?companyName=ACME%20CORP&taxId=TAX-12345678"
 ```
 
 Response:
 ```json
 {
-  "equifaxId": "ES-12345",
-  "companyName": "ACME CORPORATION SL",
-  "cif": "A12345678",
+  "providerId": "PROV-12345",
+  "companyName": "ACME CORPORATION",
+  "taxId": "TAX-12345678",
   "confidence": 0.95,
   "active": true
 }
@@ -1660,7 +1658,7 @@ Response:
 #### 6.4 Enrich Credit Report
 
 ```bash
-curl -X POST "http://localhost:8080/api/v1/enrichment/equifax-spain-credit/enrich" \
+curl -X POST "http://localhost:8080/api/v1/enrichment/credit-bureau/enrich" \
   -H "Content-Type: application/json" \
   -d '{
     "enrichmentType": "credit-report",
@@ -1668,10 +1666,10 @@ curl -X POST "http://localhost:8080/api/v1/enrichment/equifax-spain-credit/enric
     "sourceDto": {
       "companyId": "12345",
       "companyName": "ACME CORP",
-      "cif": "A12345678"
+      "taxId": "TAX-12345678"
     },
     "parameters": {
-      "equifaxId": "ES-12345"
+      "providerId": "PROV-12345"
     },
     "requestId": "req-001",
     "tenantId": "tenant-001"
@@ -1685,7 +1683,7 @@ Response:
   "enrichedData": {
     "companyId": "12345",
     "companyName": "ACME CORP",
-    "cif": "A12345678",
+    "taxId": "TAX-12345678",
     "creditScore": 750,
     "creditRating": "AAA",
     "riskLevel": "LOW",
@@ -1696,10 +1694,10 @@ Response:
     "paymentDelayPercentage": 5.2,
     "numberOfDefaults": 0,
     "reportDate": "2025-10-24",
-    "dataSource": "Equifax Spain",
-    "equifaxId": "ES-12345"
+    "dataSource": "Credit Bureau Provider",
+    "providerId": "PROV-12345"
   },
-  "providerName": "Equifax Spain",
+  "providerName": "Credit Bureau Provider",
   "enrichmentType": "credit-report",
   "strategy": "ENHANCE",
   "message": "Enrichment successful",
@@ -1718,13 +1716,13 @@ Your enricher automatically provides observability:
 
 ```
 # Enrichment metrics
-enrichment.requests.total{provider="Equifax Spain",type="credit-report",status="success"} 150
-enrichment.requests.total{provider="Equifax Spain",type="credit-report",status="failure"} 2
-enrichment.duration.seconds{provider="Equifax Spain",type="credit-report"} 0.450
+enrichment.requests.total{provider="Credit Bureau Provider",type="credit-report",status="success"} 150
+enrichment.requests.total{provider="Credit Bureau Provider",type="credit-report",status="failure"} 2
+enrichment.duration.seconds{provider="Credit Bureau Provider",type="credit-report"} 0.450
 
 # Resiliency metrics
-resilience4j.circuitbreaker.state{name="equifax-spain"} 0  # 0=CLOSED, 1=OPEN
-resilience4j.retry.calls{name="equifax-spain",kind="successful"} 148
+resilience4j.circuitbreaker.state{name="credit-bureau"} 0  # 0=CLOSED, 1=OPEN
+resilience4j.retry.calls{name="credit-bureau",kind="successful"} 148
 ```
 
 #### 7.2 Tracing (Micrometer Tracing)
@@ -1732,7 +1730,7 @@ resilience4j.retry.calls{name="equifax-spain",kind="successful"} 148
 Distributed traces are created automatically:
 ```
 Span: enrich-credit-report
-  ├─ Span: fetch-provider-data (Equifax API call)
+  ├─ Span: fetch-provider-data (Credit Bureau API call)
   ├─ Span: map-to-target
   └─ Span: apply-strategy
 ```
@@ -1743,11 +1741,11 @@ Span: enrich-credit-report
 {
   "timestamp": "2025-10-24T10:30:00.123Z",
   "level": "INFO",
-  "logger": "EquifaxSpainCreditEnricher",
-  "message": "Enrichment completed: type=credit-report, provider=Equifax Spain, success=true, duration=450ms",
+  "logger": "CreditBureauEnricher",
+  "message": "Enrichment completed: type=credit-report, provider=Credit Bureau Provider, success=true, duration=450ms",
   "traceId": "abc123",
   "spanId": "def456",
-  "provider": "Equifax Spain",
+  "provider": "Credit Bureau Provider",
   "enrichmentType": "credit-report",
   "requestId": "req-001"
 }
@@ -1781,7 +1779,7 @@ Ensure your enricher follows all best practices:
 
 You've now built a **production-ready data enricher** with:
 
-1. ✅ **Core Enrichment**: Fetches and maps Equifax credit reports
+1. ✅ **Core Enrichment**: Fetches and maps credit bureau reports
 2. ✅ **Provider Operations**: Search, validate, and quick-lookup endpoints
 3. ✅ **REST API**: Fully documented with OpenAPI/Swagger
 4. ✅ **Observability**: Automatic tracing, metrics, and structured logging
@@ -1795,7 +1793,7 @@ You've now built a **production-ready data enricher** with:
 - Add more provider-specific operations as needed
 - Implement caching for frequently accessed data
 - Add custom metrics for business KPIs
-- Create integration tests with real Equifax sandbox
+- Create integration tests with provider sandbox environment
 - Document your enricher in your team's wiki
 
 ---
@@ -2027,9 +2025,9 @@ Checks the health of the enrichment provider.
 
 Many data enrichment providers require auxiliary operations before the main enrichment can be performed. For example:
 
-- **ID Lookups**: Search for internal provider IDs (e.g., Equifax ID, DUNS number)
+- **ID Lookups**: Search for internal provider IDs
 - **Entity Matching**: Fuzzy match companies or individuals in the provider's database
-- **Validation**: Validate identifiers (CIF, VAT, Tax ID, etc.)
+- **Validation**: Validate identifiers (Tax ID, VAT, etc.)
 - **Metadata Retrieval**: Get provider-specific configuration or metadata
 
 The library provides a **declarative catalog system** that allows enrichers to expose these operations as REST endpoints automatically.
@@ -2040,43 +2038,43 @@ The library provides a **declarative catalog system** that allows enrichers to e
 
 ```java
 @Service
-public class EquifaxSpainEnricher
-        extends TypedDataEnricher<CompanyDTO, EquifaxResponse, CompanyDTO>
+public class CreditBureauEnricher
+        extends TypedDataEnricher<CompanyDTO, CreditBureauResponse, CompanyDTO>
         implements ProviderOperationCatalog {
 
     @Override
     public List<ProviderOperation> getOperationCatalog() {
         return List.of(
-            // Operation 1: Search company by name/CIF to get Equifax internal ID
+            // Operation 1: Search company by name/tax ID to get provider internal ID
             ProviderOperation.builder()
                 .operationId("search-company")
                 .path("/search-company")
                 .method(RequestMethod.GET)
-                .description("Search for a company by name or CIF to obtain Equifax internal ID")
+                .description("Search for a company by name or tax ID to obtain provider internal ID")
                 .requestExample(Map.of(
                     "companyName", "Acme Corporation",
-                    "cif", "A12345678"
+                    "taxId", "TAX-12345678"
                 ))
                 .responseExample(Map.of(
-                    "equifaxId", "ES-12345",
-                    "companyName", "ACME CORPORATION SL",
-                    "cif", "A12345678",
+                    "providerId", "PROV-12345",
+                    "companyName", "ACME CORPORATION",
+                    "taxId", "TAX-12345678",
                     "confidence", 0.95
                 ))
                 .tags(new String[]{"lookup", "search"})
                 .requiresAuth(true)
                 .build(),
 
-            // Operation 2: Validate CIF
+            // Operation 2: Validate Tax ID
             ProviderOperation.builder()
-                .operationId("validate-cif")
-                .path("/validate-cif")
+                .operationId("validate-tax-id")
+                .path("/validate-tax-id")
                 .method(RequestMethod.GET)
-                .description("Validate that a CIF exists in Equifax database")
-                .requestExample(Map.of("cif", "A12345678"))
+                .description("Validate that a tax ID exists in credit bureau database")
+                .requestExample(Map.of("taxId", "TAX-12345678"))
                 .responseExample(Map.of(
                     "valid", true,
-                    "equifaxId", "ES-12345"
+                    "providerId", "PROV-12345"
                 ))
                 .tags(new String[]{"validation"})
                 .build(),
@@ -2087,7 +2085,7 @@ public class EquifaxSpainEnricher
                 .path("/credit-score")
                 .method(RequestMethod.POST)
                 .description("Get just the credit score without full enrichment data")
-                .requestExample(Map.of("equifaxId", "ES-12345"))
+                .requestExample(Map.of("providerId", "PROV-12345"))
                 .responseExample(Map.of(
                     "creditScore", 750,
                     "creditRating", "AAA",
@@ -2105,7 +2103,7 @@ public class EquifaxSpainEnricher
 
         return switch (operationId) {
             case "search-company" -> searchCompany(parameters);
-            case "validate-cif" -> validateCif(parameters);
+            case "validate-tax-id" -> validateTaxId(parameters);
             case "get-credit-score" -> getCreditScore(parameters);
             default -> Mono.error(new IllegalArgumentException(
                 "Unknown operation: " + operationId));
@@ -2114,39 +2112,39 @@ public class EquifaxSpainEnricher
 
     private Mono<Map<String, Object>> searchCompany(Map<String, Object> params) {
         String companyName = (String) params.get("companyName");
-        String cif = (String) params.get("cif");
+        String taxId = (String) params.get("taxId");
 
-        // Call Equifax search API
-        return equifaxClient.searchCompany(companyName, cif)
+        // Call credit bureau search API
+        return bureauClient.searchCompany(companyName, taxId)
             .map(result -> Map.of(
-                "equifaxId", result.getId(),
+                "providerId", result.getId(),
                 "companyName", result.getName(),
-                "cif", result.getCif(),
+                "taxId", result.getTaxId(),
                 "confidence", result.getMatchScore()
             ));
     }
 
-    private Mono<Map<String, Object>> validateCif(Map<String, Object> params) {
-        String cif = (String) params.get("cif");
+    private Mono<Map<String, Object>> validateTaxId(Map<String, Object> params) {
+        String taxId = (String) params.get("taxId");
 
-        // Call Equifax validation API
-        return equifaxClient.validateCif(cif)
+        // Call credit bureau validation API
+        return bureauClient.validateTaxId(taxId)
             .map(result -> Map.of(
                 "valid", result.isValid(),
-                "equifaxId", result.getId()
+                "providerId", result.getId()
             ));
     }
 
     private Mono<Map<String, Object>> getCreditScore(Map<String, Object> params) {
-        String equifaxId = (String) params.get("equifaxId");
+        String providerId = (String) params.get("providerId");
 
-        // Call Equifax credit score API
-        return equifaxClient.getCreditScore(equifaxId)
+        // Call credit bureau credit score API
+        return bureauClient.getCreditScore(providerId)
             .map(result -> Map.of(
                 "creditScore", result.getScore(),
                 "creditRating", result.getRating(),
                 "lastUpdated", result.getLastUpdated().toString(),
-                "equifaxId", equifaxId
+                "providerId", providerId
             ));
     }
 }
@@ -2157,12 +2155,12 @@ public class EquifaxSpainEnricher
 The `AbstractDataEnricherController` automatically exposes these endpoints:
 
 ```
-POST /api/v1/enrichment/equifax-spain/enrich              (standard enrichment)
-GET  /api/v1/enrichment/equifax-spain/health              (health check)
-GET  /api/v1/enrichment/equifax-spain/operations          (list operations)
-GET  /api/v1/enrichment/equifax-spain/search-company      (via generic handler)
-GET  /api/v1/enrichment/equifax-spain/validate-cif        (via generic handler)
-POST /api/v1/enrichment/equifax-spain/credit-score        (via generic handler)
+POST /api/v1/enrichment/credit-bureau/enrich              (standard enrichment)
+GET  /api/v1/enrichment/credit-bureau/health              (health check)
+GET  /api/v1/enrichment/credit-bureau/operations          (list operations)
+GET  /api/v1/enrichment/credit-bureau/search-company      (via generic handler)
+GET  /api/v1/enrichment/credit-bureau/validate-tax-id     (via generic handler)
+POST /api/v1/enrichment/credit-bureau/credit-score        (via generic handler)
 ```
 
 #### Step 3: Operations Appear in Discovery
@@ -2173,28 +2171,28 @@ GET /api/v1/enrichment/providers
 
 ```json
 {
-  "providerName": "Equifax Spain",
+  "providerName": "Credit Bureau Provider",
   "supportedTypes": ["credit-report", "company-profile"],
-  "description": "Equifax Spain data enrichment services",
+  "description": "Credit bureau data enrichment services",
   "endpoints": [
-    "/api/v1/enrichment/equifax-spain/enrich"
+    "/api/v1/enrichment/credit-bureau/enrich"
   ],
   "operations": [
     {
       "operationId": "search-company",
-      "path": "/api/v1/enrichment/equifax-spain/search-company",
+      "path": "/api/v1/enrichment/credit-bureau/search-company",
       "method": "GET",
-      "description": "Search for a company by name or CIF to obtain Equifax internal ID",
+      "description": "Search for a company by name or tax ID to obtain provider internal ID",
       "tags": ["lookup", "search"],
       "requiresAuth": true,
       "requestExample": {
         "companyName": "Acme Corporation",
-        "cif": "A12345678"
+        "taxId": "TAX-12345678"
       },
       "responseExample": {
-        "equifaxId": "ES-12345",
-        "companyName": "ACME CORPORATION SL",
-        "cif": "A12345678",
+        "providerId": "PROV-12345",
+        "companyName": "ACME CORPORATION",
+        "taxId": "TAX-12345678",
         "confidence": 0.95
       }
     }
@@ -2208,19 +2206,19 @@ GET /api/v1/enrichment/providers
 # Step 1: Discover available providers and their operations
 GET /api/v1/enrichment/providers?enrichmentType=credit-report
 
-# Step 2: Search for company to get Equifax internal ID
-GET /api/v1/enrichment/equifax-spain/search-company?companyName=Acme%20Corp&cif=A12345678
+# Step 2: Search for company to get provider internal ID
+GET /api/v1/enrichment/credit-bureau/search-company?companyName=Acme%20Corp&taxId=TAX-12345678
 
 Response:
 {
-  "equifaxId": "ES-12345",
-  "companyName": "ACME CORPORATION SL",
-  "cif": "A12345678",
+  "providerId": "PROV-12345",
+  "companyName": "ACME CORPORATION",
+  "taxId": "TAX-12345678",
   "confidence": 0.95
 }
 
-# Step 3: Use the Equifax ID for enrichment
-POST /api/v1/enrichment/equifax-spain/enrich
+# Step 3: Use the provider ID for enrichment
+POST /api/v1/enrichment/credit-bureau/enrich
 {
   "enrichmentType": "credit-report",
   "strategy": "ENHANCE",
@@ -2229,7 +2227,7 @@ POST /api/v1/enrichment/equifax-spain/enrich
     "name": "Acme Corp"
   },
   "parameters": {
-    "equifaxId": "ES-12345"
+    "providerId": "PROV-12345"
   }
 }
 ```

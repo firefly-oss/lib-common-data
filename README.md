@@ -648,7 +648,7 @@ public class FinancialDataEnricher
 - `mapToTarget(TProvider)` - Map provider response to your target DTO format
 
 **Recommended Methods to Override:**
-- `getProviderName()` - Return the provider name (e.g., "Equifax Spain")
+- `getProviderName()` - Return the provider name (e.g., "Credit Bureau Provider")
 - `getSupportedEnrichmentTypes()` - Return enrichment types this enricher supports
 - `getEnricherDescription()` - Return a description of what this enricher does
 
@@ -1265,21 +1265,21 @@ POST /api/v1/enrichment/provider-a-spain-credit/enrich
 **Example - Provider-Specific Operations:**
 ```bash
 # List operations for a provider
-GET /api/v1/enrichment/equifax-spain/operations
+GET /api/v1/enrichment/credit-bureau/operations
 
 # Search for company to get internal ID (before enrichment)
-GET /api/v1/enrichment/equifax-spain/operation/search-company?companyName=Acme&cif=A12345678
+GET /api/v1/enrichment/credit-bureau/operation/search-company?companyName=Acme&taxId=A12345678
 
-# Validate CIF
-GET /api/v1/enrichment/equifax-spain/operation/validate-cif?cif=A12345678
+# Validate Tax ID
+GET /api/v1/enrichment/credit-bureau/operation/validate-tax-id?taxId=A12345678
 
 # Then use the internal ID for enrichment
-POST /api/v1/enrichment/equifax-spain/enrich
+POST /api/v1/enrichment/credit-bureau/enrich
 {
   "enrichmentType": "credit-report",
   "strategy": "ENHANCE",
   "sourceDto": { ... },
-  "parameters": { "equifaxId": "ES-12345" }
+  "parameters": { "providerId": "PROV-12345" }
 }
 ```
 
@@ -1291,8 +1291,8 @@ Enrichers can expose auxiliary operations specific to the provider's API by impl
 
 ```java
 @Service
-public class EquifaxSpainEnricher
-        extends TypedDataEnricher<CompanyDTO, EquifaxResponse, CompanyDTO>
+public class CreditBureauEnricher
+        extends TypedDataEnricher<CompanyDTO, CreditBureauResponse, CompanyDTO>
         implements ProviderOperationCatalog {
 
     @Override
@@ -1302,9 +1302,9 @@ public class EquifaxSpainEnricher
                 .operationId("search-company")
                 .path("/search-company")
                 .method(RequestMethod.GET)
-                .description("Search for a company by name or CIF to obtain Equifax internal ID")
-                .requestExample(Map.of("companyName", "Acme Corp", "cif", "A12345678"))
-                .responseExample(Map.of("equifaxId", "ES-12345", "confidence", 0.95))
+                .description("Search for a company by name or tax ID to obtain provider internal ID")
+                .requestExample(Map.of("companyName", "Acme Corp", "taxId", "A12345678"))
+                .responseExample(Map.of("providerId", "PROV-12345", "confidence", 0.95))
                 .tags(new String[]{"lookup", "search"})
                 .build()
         );
