@@ -172,5 +172,48 @@ public class JobTracingService {
             currentObservation.event(Observation.Event.of(eventName, eventDescription));
         }
     }
+
+    /**
+     * Wraps a generic operation with tracing.
+     *
+     * <p>This is a generic tracing method that can be used for any operation,
+     * not just job stages. Useful for enrichment operations, custom operations, etc.</p>
+     *
+     * @param operationName the name of the operation
+     * @param operationId the operation ID for correlation
+     * @param operation the operation to trace
+     * @param <T> the return type
+     * @return the traced operation
+     */
+    public <T> Mono<T> traceOperation(String operationName, String operationId, Mono<T> operation) {
+        if (!properties.getObservability().isTracingEnabled()) {
+            return operation;
+        }
+
+        return Mono.defer(() -> {
+            Observation observation = Observation.createNotStarted(operationName, observationRegistry)
+                    .lowCardinalityKeyValue("operation.name", operationName)
+                    .lowCardinalityKeyValue("operation.id", operationId != null ? operationId : "unknown");
+
+            return operation
+                    .doOnSubscribe(s -> {
+                        observation.start();
+                        log.debug("Started tracing for operation {} with ID {}", operationName, operationId);
+                    })
+                    .doOnSuccess(result -> {
+                        observation.event(Observation.Event.of("operation.success", "Operation completed successfully"));
+                        log.debug("Operation {} completed successfully for ID {}", operationName, operationId);
+                    })
+                    .doOnError(error -> {
+                        observation.error(error);
+                        observation.event(Observation.Event.of("operation.error", "Operation failed: " + error.getMessage()));
+                        log.error("Operation {} failed for ID {}: {}", operationName, operationId, error.getMessage());
+                    })
+                    .doFinally(signalType -> {
+                        observation.stop();
+                        log.debug("Stopped tracing for operation {} with ID {}", operationName, operationId);
+                    });
+        });
+    }
 }
 

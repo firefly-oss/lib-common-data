@@ -214,5 +214,99 @@ public class JobMetricsService {
 
         log.debug("Recorded active job count: {}", count);
     }
+
+    /**
+     * Records enrichment operation metrics.
+     *
+     * @param enrichmentType the type of enrichment
+     * @param providerName the provider name
+     * @param success whether the enrichment was successful
+     * @param durationMillis duration in milliseconds
+     * @param fieldsEnriched number of fields enriched
+     * @param cost cost of the operation
+     */
+    public void recordEnrichmentMetrics(String enrichmentType,
+                                       String providerName,
+                                       boolean success,
+                                       long durationMillis,
+                                       Integer fieldsEnriched,
+                                       Double cost) {
+        if (!properties.getObservability().isMetricsEnabled()) {
+            return;
+        }
+
+        String metricPrefix = properties.getObservability().getMetricPrefix();
+
+        // Record duration
+        Timer.builder(metricPrefix + ".enrichment.duration")
+                .tag("type", enrichmentType)
+                .tag("provider", providerName)
+                .tag("status", success ? "success" : "failure")
+                .description("Data enrichment operation duration")
+                .register(meterRegistry)
+                .record(Duration.ofMillis(durationMillis));
+
+        // Record count
+        Counter.builder(metricPrefix + ".enrichment.count")
+                .tag("type", enrichmentType)
+                .tag("provider", providerName)
+                .tag("status", success ? "success" : "failure")
+                .description("Data enrichment operation count")
+                .register(meterRegistry)
+                .increment();
+
+        // Record fields enriched
+        if (fieldsEnriched != null && fieldsEnriched > 0) {
+            meterRegistry.gauge(metricPrefix + ".enrichment.fields",
+                    io.micrometer.core.instrument.Tags.of(
+                            "type", enrichmentType,
+                            "provider", providerName
+                    ),
+                    fieldsEnriched);
+        }
+
+        // Record cost
+        if (cost != null && cost > 0) {
+            meterRegistry.gauge(metricPrefix + ".enrichment.cost",
+                    io.micrometer.core.instrument.Tags.of(
+                            "type", enrichmentType,
+                            "provider", providerName
+                    ),
+                    cost);
+        }
+
+        log.debug("Recorded enrichment metrics: type={}, provider={}, success={}, duration={}ms",
+                enrichmentType, providerName, success, durationMillis);
+    }
+
+    /**
+     * Records enrichment error metrics.
+     *
+     * @param enrichmentType the type of enrichment
+     * @param providerName the provider name
+     * @param errorType the error type
+     * @param durationMillis duration in milliseconds
+     */
+    public void recordEnrichmentError(String enrichmentType,
+                                     String providerName,
+                                     String errorType,
+                                     long durationMillis) {
+        if (!properties.getObservability().isMetricsEnabled()) {
+            return;
+        }
+
+        String metricPrefix = properties.getObservability().getMetricPrefix();
+
+        Counter.builder(metricPrefix + ".enrichment.errors")
+                .tag("type", enrichmentType)
+                .tag("provider", providerName)
+                .tag("error_type", errorType)
+                .description("Data enrichment errors")
+                .register(meterRegistry)
+                .increment();
+
+        log.debug("Recorded enrichment error: type={}, provider={}, errorType={}",
+                enrichmentType, providerName, errorType);
+    }
 }
 
