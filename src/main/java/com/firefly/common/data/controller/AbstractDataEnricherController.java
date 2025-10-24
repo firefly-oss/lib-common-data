@@ -574,10 +574,15 @@ public abstract class AbstractDataEnricherController implements DataEnricherCont
             parameters.putAll(bodyParams);
         }
 
-        log.debug("Executing operation {} with parameters: {}", operationId, parameters);
+        // Extract tenantId and requestId from parameters (if present)
+        String tenantId = extractStringParam(parameters, "tenantId");
+        String requestId = extractStringParam(parameters, "requestId");
+
+        log.debug("Executing operation {} with parameters: {}, tenantId: {}, requestId: {}",
+                operationId, parameters, tenantId, requestId);
 
         // Convert parameters to request DTO and execute
-        return executeTypedOperation(operation, parameters)
+        return executeTypedOperation(operation, parameters, tenantId, requestId)
             .map(ResponseEntity::ok)
             .doOnSuccess(response -> {
                 log.info("Operation {} completed successfully for provider {}",
@@ -597,16 +602,32 @@ public abstract class AbstractDataEnricherController implements DataEnricherCont
     }
 
     /**
+     * Extracts a string parameter from the parameters map.
+     *
+     * @param parameters the parameters map
+     * @param key the parameter key
+     * @return the parameter value, or null if not present
+     */
+    private String extractStringParam(Map<String, Object> parameters, String key) {
+        Object value = parameters.get(key);
+        return value != null ? value.toString() : null;
+    }
+
+    /**
      * Executes a typed operation with automatic request/response conversion.
      *
      * @param operation the operation to execute
      * @param parameters the request parameters as a map
+     * @param tenantId the tenant ID (optional)
+     * @param requestId the request ID (optional)
      * @return the operation response
      */
     @SuppressWarnings("unchecked")
     private <TRequest, TResponse> Mono<TResponse> executeTypedOperation(
             ProviderOperation<TRequest, TResponse> operation,
-            Map<String, Object> parameters) {
+            Map<String, Object> parameters,
+            String tenantId,
+            String requestId) {
 
         try {
             // Convert parameters map to request DTO
@@ -617,7 +638,20 @@ public abstract class AbstractDataEnricherController implements DataEnricherCont
                 throw new IllegalStateException("ObjectMapper not available for request conversion");
             }
 
-            // Execute the operation
+            // Execute the operation with context if it's an AbstractProviderOperation
+            if (operation instanceof com.firefly.common.data.operation.AbstractProviderOperation) {
+                com.firefly.common.data.operation.AbstractProviderOperation<TRequest, TResponse> abstractOp =
+                    (com.firefly.common.data.operation.AbstractProviderOperation<TRequest, TResponse>) operation;
+
+                // Set provider name if not already set
+                if (abstractOp.getMetadata() != null) {
+                    abstractOp.setProviderName(dataEnricher.getProviderName());
+                }
+
+                return abstractOp.executeWithContext(request, tenantId, requestId);
+            }
+
+            // Fallback to simple execute for non-AbstractProviderOperation implementations
             return operation.execute(request);
         } catch (Exception e) {
             log.error("Failed to convert request parameters to DTO: {}", e.getMessage(), e);

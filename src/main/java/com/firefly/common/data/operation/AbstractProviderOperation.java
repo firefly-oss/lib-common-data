@@ -2,26 +2,41 @@ package com.firefly.common.data.operation;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.firefly.common.data.cache.OperationCacheService;
+import com.firefly.common.data.config.DataEnrichmentProperties;
+import com.firefly.common.data.event.OperationEventPublisher;
+import com.firefly.common.data.observability.JobMetricsService;
+import com.firefly.common.data.observability.JobTracingService;
 import com.firefly.common.data.operation.schema.JsonSchemaGenerator;
+import com.firefly.common.data.resiliency.ResiliencyDecoratorService;
 import jakarta.annotation.PostConstruct;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import reactor.core.publisher.Mono;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
- * Abstract base class for provider-specific operations.
+ * Abstract base class for provider-specific operations with enterprise-grade features.
  *
  * <p>This class provides common functionality for all provider operations including:</p>
  * <ul>
- *   <li>Automatic metadata extraction from {@link Operation} annotation</li>
- *   <li>JSON Schema generation for request/response DTOs</li>
- *   <li>Example generation from {@code @Schema} annotations</li>
- *   <li>Request validation</li>
- *   <li>Error handling</li>
- *   <li>Logging</li>
+ *   <li><b>Observability:</b> Automatic tracing, metrics, and event publishing</li>
+ *   <li><b>Resiliency:</b> Circuit breaker, retry, rate limiting, and timeout</li>
+ *   <li><b>Caching:</b> Automatic caching with tenant isolation and TTL management</li>
+ *   <li><b>Validation:</b> Jakarta Validation support with automatic validation</li>
+ *   <li><b>Metadata:</b> Automatic extraction from {@link ProviderCustomOperation} annotation</li>
+ *   <li><b>JSON Schema:</b> Automatic schema generation for request/response DTOs</li>
+ *   <li><b>Error Handling:</b> Comprehensive error handling with structured responses</li>
  * </ul>
  *
  * <p><b>Example Implementation:</b></p>
@@ -70,14 +85,46 @@ import java.lang.reflect.Type;
  * @see Operation
  */
 @Slf4j
-public abstract class AbstractProviderOperation<TRequest, TResponse> 
+public abstract class AbstractProviderOperation<TRequest, TResponse>
         implements ProviderOperation<TRequest, TResponse> {
 
+    // Core dependencies
     @Autowired(required = false)
     private JsonSchemaGenerator schemaGenerator;
 
     @Autowired(required = false)
     private ObjectMapper objectMapper;
+
+    @Autowired(required = false)
+    private Validator validator;
+
+    // Observability dependencies
+    @Autowired(required = false)
+    private JobTracingService tracingService;
+
+    @Autowired(required = false)
+    private JobMetricsService metricsService;
+
+    @Autowired(required = false)
+    private OperationEventPublisher eventPublisher;
+
+    // Resiliency dependencies
+    @Autowired(required = false)
+    private ResiliencyDecoratorService resiliencyService;
+
+    // Caching dependencies
+    @Autowired(required = false)
+    private OperationCacheService cacheService;
+
+    // Configuration
+    @Autowired(required = false)
+    private DataEnrichmentProperties properties;
+
+    // Metadata
+    private ProviderOperationMetadata metadata;
+    private Class<TRequest> requestType;
+    private Class<TResponse> responseType;
+    private String providerName;
 
     /**
      * Sets the JSON schema generator (for testing purposes).
@@ -95,9 +142,69 @@ public abstract class AbstractProviderOperation<TRequest, TResponse>
         this.objectMapper = objectMapper;
     }
 
-    private ProviderOperationMetadata metadata;
-    private Class<TRequest> requestType;
-    private Class<TResponse> responseType;
+    /**
+     * Sets the validator (for testing purposes).
+     * @param validator the validator
+     */
+    public void setValidator(Validator validator) {
+        this.validator = validator;
+    }
+
+    /**
+     * Sets the tracing service (for testing purposes).
+     * @param tracingService the tracing service
+     */
+    public void setTracingService(JobTracingService tracingService) {
+        this.tracingService = tracingService;
+    }
+
+    /**
+     * Sets the metrics service (for testing purposes).
+     * @param metricsService the metrics service
+     */
+    public void setMetricsService(JobMetricsService metricsService) {
+        this.metricsService = metricsService;
+    }
+
+    /**
+     * Sets the event publisher (for testing purposes).
+     * @param eventPublisher the event publisher
+     */
+    public void setEventPublisher(OperationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
+    }
+
+    /**
+     * Sets the resiliency service (for testing purposes).
+     * @param resiliencyService the resiliency service
+     */
+    public void setResiliencyService(ResiliencyDecoratorService resiliencyService) {
+        this.resiliencyService = resiliencyService;
+    }
+
+    /**
+     * Sets the cache service (for testing purposes).
+     * @param cacheService the cache service
+     */
+    public void setCacheService(OperationCacheService cacheService) {
+        this.cacheService = cacheService;
+    }
+
+    /**
+     * Sets the properties (for testing purposes).
+     * @param properties the properties
+     */
+    public void setProperties(DataEnrichmentProperties properties) {
+        this.properties = properties;
+    }
+
+    /**
+     * Sets the provider name.
+     * @param providerName the provider name
+     */
+    public void setProviderName(String providerName) {
+        this.providerName = providerName;
+    }
 
     /**
      * Initializes the operation metadata after bean construction.
@@ -200,15 +307,142 @@ public abstract class AbstractProviderOperation<TRequest, TResponse>
 
     @Override
     public final Mono<TResponse> execute(TRequest request) {
-        log.debug("Executing operation {} with request: {}", 
-            metadata.getOperationId(), request);
+        return executeWithContext(request, null, null);
+    }
 
-        return Mono.fromRunnable(() -> validateRequest(request))
-            .then(doExecute(request))
-            .doOnSuccess(response -> 
-                log.debug("Operation {} completed successfully", metadata.getOperationId()))
-            .doOnError(error -> 
-                log.error("Operation {} failed: {}", metadata.getOperationId(), error.getMessage(), error));
+    /**
+     * Executes the operation with full context (tenant ID and request ID).
+     *
+     * <p>This method provides the complete execution flow with:</p>
+     * <ul>
+     *   <li>Automatic validation (Jakarta Validation + custom validation)</li>
+     *   <li>Cache lookup and storage</li>
+     *   <li>Distributed tracing</li>
+     *   <li>Metrics collection</li>
+     *   <li>Event publishing</li>
+     *   <li>Resiliency patterns (circuit breaker, retry, rate limiting)</li>
+     * </ul>
+     *
+     * @param request the request DTO
+     * @param tenantId the tenant ID (optional, for caching and events)
+     * @param requestId the request ID (optional, for correlation)
+     * @return a Mono emitting the response DTO
+     */
+    public final Mono<TResponse> executeWithContext(TRequest request, String tenantId, String requestId) {
+        String operationId = metadata.getOperationId();
+        String effectiveRequestId = requestId != null ? requestId : UUID.randomUUID().toString();
+        String effectiveTenantId = tenantId != null ? tenantId : "default";
+
+        log.debug("Executing operation {} with request: {}, tenantId: {}, requestId: {}",
+            operationId, request, effectiveTenantId, effectiveRequestId);
+
+        // Check cache first
+        if (shouldUseCache()) {
+            return cacheService.get(effectiveTenantId, providerName, operationId, request, responseType)
+                .flatMap(cached -> {
+                    if (cached.isPresent()) {
+                        log.debug("Operation {} result served from cache", operationId);
+
+                        // Publish cache hit event
+                        if (shouldPublishEvents()) {
+                            eventPublisher.publishOperationCached(
+                                operationId, providerName, effectiveRequestId, effectiveTenantId);
+                        }
+
+                        return Mono.just(cached.get());
+                    }
+
+                    // Not in cache, execute and cache
+                    return executeAndCache(request, effectiveTenantId, effectiveRequestId);
+                });
+        }
+
+        // Cache disabled, execute directly
+        return executeWithObservabilityAndResiliency(request, effectiveTenantId, effectiveRequestId);
+    }
+
+    /**
+     * Executes the operation and caches the result.
+     */
+    private Mono<TResponse> executeAndCache(TRequest request, String tenantId, String requestId) {
+        return executeWithObservabilityAndResiliency(request, tenantId, requestId)
+            .flatMap(response -> {
+                // Cache successful responses
+                if (shouldUseCache()) {
+                    return cacheService.put(tenantId, providerName, metadata.getOperationId(), request, response)
+                        .thenReturn(response);
+                }
+                return Mono.just(response);
+            });
+    }
+
+    /**
+     * Executes the operation with full observability and resiliency wrapping.
+     */
+    private Mono<TResponse> executeWithObservabilityAndResiliency(TRequest request, String tenantId, String requestId) {
+        String operationId = metadata.getOperationId();
+        Instant startTime = Instant.now();
+
+        // Publish operation started event
+        if (shouldPublishEvents()) {
+            eventPublisher.publishOperationStarted(operationId, providerName, requestId, tenantId);
+        }
+
+        // Validate request
+        Mono<TResponse> operation = Mono.fromRunnable(() -> performValidation(request))
+            .then(doExecute(request));
+
+        // Wrap with tracing
+        if (shouldUseTracing()) {
+            operation = tracingService.traceOperation(
+                "operation-" + operationId,
+                requestId,
+                operation
+            );
+        }
+
+        // Wrap with resiliency patterns
+        if (shouldUseResiliency()) {
+            operation = resiliencyService.decorate(operation);
+        }
+
+        // Add metrics and event publishing
+        return operation
+            .doOnSuccess(response -> {
+                long durationMillis = Duration.between(startTime, Instant.now()).toMillis();
+
+                // Record metrics
+                if (shouldUseMetrics()) {
+                    recordOperationMetrics(operationId, true, durationMillis);
+                }
+
+                // Publish completion event
+                if (shouldPublishEvents()) {
+                    eventPublisher.publishOperationCompleted(
+                        operationId, providerName, requestId, tenantId, durationMillis, false);
+                }
+
+                log.info("Operation completed: operation={}, provider={}, duration={}ms, requestId={}",
+                    operationId, providerName, durationMillis, requestId);
+            })
+            .doOnError(error -> {
+                long durationMillis = Duration.between(startTime, Instant.now()).toMillis();
+
+                // Record error metrics
+                if (shouldUseMetrics()) {
+                    recordOperationMetrics(operationId, false, durationMillis);
+                }
+
+                // Publish failure event
+                if (shouldPublishEvents()) {
+                    eventPublisher.publishOperationFailed(
+                        operationId, providerName, requestId, tenantId,
+                        error.getMessage(), error, durationMillis);
+                }
+
+                log.error("Operation failed: operation={}, provider={}, duration={}ms, error={}, requestId={}",
+                    operationId, providerName, durationMillis, error.getMessage(), requestId);
+            });
     }
 
     /**
@@ -222,7 +456,31 @@ public abstract class AbstractProviderOperation<TRequest, TResponse>
     protected abstract Mono<TResponse> doExecute(TRequest request);
 
     /**
-     * Validates the request DTO.
+     * Performs validation on the request DTO.
+     *
+     * <p>This method performs both Jakarta Validation (if enabled) and custom validation.</p>
+     *
+     * @param request the request DTO to validate
+     * @throws IllegalArgumentException if validation fails
+     */
+    private void performValidation(TRequest request) {
+        // Jakarta Validation
+        if (shouldUseValidation() && validator != null) {
+            Set<ConstraintViolation<TRequest>> violations = validator.validate(request);
+            if (!violations.isEmpty()) {
+                String errors = violations.stream()
+                    .map(v -> v.getPropertyPath() + ": " + v.getMessage())
+                    .collect(Collectors.joining(", "));
+                throw new IllegalArgumentException("Validation failed: " + errors);
+            }
+        }
+
+        // Custom validation
+        validateRequest(request);
+    }
+
+    /**
+     * Validates the request DTO with custom logic.
      *
      * <p>Subclasses can override this method to provide custom validation logic.
      * The default implementation does nothing.</p>
@@ -236,6 +494,79 @@ public abstract class AbstractProviderOperation<TRequest, TResponse>
     protected void validateRequest(TRequest request) {
         // Default: no validation
         // Subclasses can override to add custom validation
+    }
+
+    /**
+     * Records operation metrics.
+     */
+    private void recordOperationMetrics(String operationId, boolean success, long durationMillis) {
+        if (metricsService == null) {
+            return;
+        }
+
+        // Use enrichment metrics with operation-specific tags
+        metricsService.recordEnrichmentMetrics(
+            "operation-" + operationId,
+            providerName != null ? providerName : "unknown",
+            success,
+            durationMillis,
+            null,
+            null
+        );
+    }
+
+    /**
+     * Checks if caching should be used.
+     */
+    private boolean shouldUseCache() {
+        return cacheService != null
+            && cacheService.isCacheEnabled()
+            && properties != null
+            && properties.getOperations().isCacheEnabled();
+    }
+
+    /**
+     * Checks if tracing should be used.
+     */
+    private boolean shouldUseTracing() {
+        return tracingService != null
+            && properties != null
+            && properties.getOperations().isObservabilityEnabled();
+    }
+
+    /**
+     * Checks if metrics should be used.
+     */
+    private boolean shouldUseMetrics() {
+        return metricsService != null
+            && properties != null
+            && properties.getOperations().isObservabilityEnabled();
+    }
+
+    /**
+     * Checks if events should be published.
+     */
+    private boolean shouldPublishEvents() {
+        return eventPublisher != null
+            && properties != null
+            && properties.getOperations().isPublishEvents();
+    }
+
+    /**
+     * Checks if resiliency should be used.
+     */
+    private boolean shouldUseResiliency() {
+        return resiliencyService != null
+            && properties != null
+            && properties.getOperations().isResiliencyEnabled();
+    }
+
+    /**
+     * Checks if validation should be used.
+     */
+    private boolean shouldUseValidation() {
+        return properties != null
+            && properties.getOperations().isValidationEnabled();
     }
 
     @Override

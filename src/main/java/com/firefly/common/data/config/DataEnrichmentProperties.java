@@ -108,5 +108,67 @@ public class DataEnrichmentProperties {
      * If false, individual failures are returned in the batch response.</p>
      */
     private boolean batchFailFast = false;
+
+    /**
+     * Configuration for provider custom operations.
+     */
+    private OperationsConfig operations = new OperationsConfig();
+
+    /**
+     * Configuration properties for provider custom operations.
+     */
+    @Data
+    public static class OperationsConfig {
+
+        /**
+         * Whether to enable observability (tracing, metrics, events) for operations.
+         */
+        private boolean observabilityEnabled = true;
+
+        /**
+         * Whether to enable resiliency patterns for operations.
+         */
+        private boolean resiliencyEnabled = true;
+
+        /**
+         * Whether to enable caching for operations.
+         */
+        private boolean cacheEnabled = true;
+
+        /**
+         * Time-to-live for cached operation results in seconds.
+         */
+        private int cacheTtlSeconds = 1800; // 30 minutes default
+
+        /**
+         * Default timeout for operations in seconds.
+         */
+        private int defaultTimeoutSeconds = 15;
+
+        /**
+         * Whether to enable automatic validation with Jakarta Validation.
+         */
+        private boolean validationEnabled = true;
+
+        /**
+         * Whether to publish events for operations.
+         */
+        private boolean publishEvents = true;
+
+        /**
+         * Maximum number of retry attempts for operations.
+         */
+        private int maxRetryAttempts = 2;
+
+        /**
+         * Whether to enable circuit breaker for operations.
+         */
+        private boolean circuitBreakerEnabled = true;
+
+        /**
+         * Whether to enable rate limiting for operations.
+         */
+        private boolean rateLimiterEnabled = true;
+    }
 }
 

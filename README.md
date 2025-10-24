@@ -111,7 +111,7 @@ For quick operations (< 30 seconds):
 
 1. **EXECUTE**: Single operation that returns results immediately
 
-See [Synchronous Jobs Guide](docs/sync-jobs.md) for detailed documentation.
+See [Synchronous Jobs Guide](docs/data-jobs/sync-jobs.md) for detailed documentation.
 
 ### 🎨 Service & Controller Interfaces
 
@@ -324,7 +324,7 @@ public class CreditBureauEnricher extends TypedDataEnricher<...> {
         max-retry-attempts: 3
   ```
 
-See [Data Enrichment Guide](docs/data-enrichment.md) for detailed documentation.
+See [Data Enrichment Guide](docs/data-enrichers/data-enrichment.md) for detailed documentation.
 
 ## Installation
 
@@ -504,7 +504,7 @@ Only use this if you need full control and don't want the built-in features:
 @Slf4j
 public class MyDataJobService implements DataJobService {
     // Implementation similar to Option A but without automatic features
-    // See full example in docs/examples.md
+    // See full example in docs/common/examples.md
 }
 ```
 
@@ -744,7 +744,7 @@ public class DataValidationSyncJobController extends AbstractSyncDataJobControll
 }
 ```
 
-**See [Synchronous Jobs Guide](docs/sync-jobs.md) for complete documentation.**
+**See [Synchronous Jobs Guide](docs/data-jobs/sync-jobs.md) for complete documentation.**
 
 ---
 
@@ -1096,7 +1096,7 @@ Response:
 - ✅ Get REST endpoint URLs
 - ✅ Useful for dynamic routing and service discovery
 
-**See [Data Enrichment Guide](docs/data-enrichment.md) for complete documentation including:**
+**See [Data Enrichment Guide](docs/data-enrichers/data-enrichment.md) for complete documentation including:**
 - Provider-specific operations catalog
 - Advanced validation with EnrichmentRequestValidator
 - Custom enrichment strategies
@@ -1295,7 +1295,7 @@ firefly:
         enable-result-caching: true
 ```
 
-For complete implementation guide with R2DBC, see [Persistence Documentation](docs/persistence.md).
+For complete implementation guide with R2DBC, see [Persistence Documentation](docs/common/persistence.md).
 
 ### 6. Using SAGAs for Distributed Data Processing (Optional)
 
@@ -1524,7 +1524,7 @@ firefly:
 - `rate-limiter-enabled` - Enable rate limiter pattern (default: `false`)
 - `bulkhead-enabled` - Enable bulkhead pattern (default: `false`)
 
-See [Data Enrichment Guide](docs/data-enrichment.md) for complete configuration details.
+See [Data Enrichment Guide](docs/data-enrichers/data-enrichment.md) for complete configuration details.
 
 ## API Endpoints
 
@@ -1749,7 +1749,7 @@ resultService.getCachedResult(executionId)
     .subscribe(cached -> log.info("Using cached result"));
 ```
 
-For implementation details, see [Persistence Documentation](docs/persistence.md).
+For implementation details, see [Persistence Documentation](docs/common/persistence.md).
 
 ## Extending the Library
 
@@ -1821,47 +1821,64 @@ class DataJobServiceTest {
 
 For detailed documentation, see the [`docs/`](docs/) directory:
 
-### 🚀 Quick Start
-- **[Step-by-Step Guide](docs/step-by-step-guide.md)** - **NEW!** Complete guide to building a microservice from scratch
+> **📚 [Complete Documentation Index](docs/README.md)** - Start here for organized documentation by feature
+
+### 🚀 Quick Start Guides
+
+#### Data Jobs
+- **[Step-by-Step Guide: Data Jobs](docs/data-jobs/step-by-step-guide.md)** - Complete guide to building a data job microservice from scratch
   - Project setup and dependencies
   - Configuration (dev vs prod)
   - Creating job orchestrators (MOCK, AWS Step Functions, multiple orchestrators)
   - Creating multiple data job services
   - Creating multiple controllers
   - Testing and troubleshooting
-- **[Multiple Jobs Example](docs/multiple-jobs-example.md)** - Real-world example with 3 different job types
-- **[Synchronous Jobs Guide](docs/sync-jobs.md)** - ⭐ **NEW!** Complete guide for synchronous data jobs
-- **[Data Enrichment Guide](docs/data-enrichment.md)** - ⭐ **NEW!** Complete guide for data enrichment from third-party providers
+- **[Multiple Jobs Example](docs/data-jobs/multiple-jobs-example.md)** - Real-world example with 3 different job types
+- **[Synchronous Jobs Guide](docs/data-jobs/sync-jobs.md)** - ⭐ Complete guide for synchronous data jobs
+
+#### Data Enrichers
+- **[Step-by-Step Guide: Data Enricher Microservice](docs/data-enrichers/enricher-microservice-guide.md)** - ⭐ **Complete guide to building a data enricher microservice**
+  - Multi-module Maven project structure with Firefly's lib-parent-pom
+  - Domain, Client, Enricher, and Application modules
+  - Building enrichers WITHOUT custom operations
+  - Building enrichers WITH custom operations
+  - Comprehensive testing and deployment
+- **[Data Enrichment Guide](docs/data-enrichers/data-enrichment.md)** - Complete reference for data enrichment from third-party providers
 
 ### Core Documentation
-- **[Architecture](docs/architecture.md)** - Deep dive into hexagonal architecture and design patterns
-- **[Getting Started](docs/getting-started.md)** - Basic guide with complete examples
-- **[Configuration](docs/configuration.md)** - Comprehensive configuration reference
-- **[Job Lifecycle](docs/job-lifecycle.md)** - Detailed explanation of job stages and data flow
+- **[Architecture](docs/common/architecture.md)** - Deep dive into hexagonal architecture and design patterns
+- **[Getting Started](docs/common/getting-started.md)** - Basic guide with complete examples
+- **[Configuration](docs/common/configuration.md)** - Comprehensive configuration reference
+- **[Job Lifecycle](docs/data-jobs/job-lifecycle.md)** - Detailed explanation of job stages and data flow
 
 ### Advanced Features
-- **[Observability](docs/observability.md)** - Distributed tracing, metrics, and health checks
-- **[Resiliency](docs/resiliency.md)** - Circuit breaker, retry, rate limiting, and bulkhead patterns
-- **[Logging](docs/logging.md)** - Comprehensive logging for all job lifecycle phases
-- **[MapStruct Mappers](docs/mappers.md)** - Guide to result transformation with MapStruct
-- **[SAGA Integration](docs/saga-integration.md)** - Distributed transactions and step events
+- **[Observability](docs/common/observability.md)** - Distributed tracing, metrics, and health checks
+- **[Resiliency](docs/common/resiliency.md)** - Circuit breaker, retry, rate limiting, and bulkhead patterns
+- **[Logging](docs/common/logging.md)** - Comprehensive logging for all job lifecycle phases
+- **[MapStruct Mappers](docs/common/mappers.md)** - Guide to result transformation with MapStruct
+- **[SAGA Integration](docs/data-jobs/saga-integration.md)** - Distributed transactions and step events
 
 ### Reference
-- **[API Reference](docs/api-reference.md)** - Complete API documentation
-- **[Examples](docs/examples.md)** - Real-world usage patterns and scenarios
-- **[Multiple Jobs Example](docs/multiple-jobs-example.md)** - ⭐ **Complete microservice with multiple controllers and data jobs**
-- **[Testing Guide](docs/testing.md)** - Testing strategies and examples
+- **[API Reference](docs/common/api-reference.md)** - Complete API documentation
+- **[Examples](docs/common/examples.md)** - Real-world usage patterns and scenarios
+- **[Testing Guide](docs/common/testing.md)** - Testing strategies and examples
 
 ### Additional Resources
 - **[Documentation Cleanup Summary](DOCUMENTATION_CLEANUP_SUMMARY.md)** - Details on documentation accuracy and what's provided vs what must be implemented
 
 ### Quick Links for Common Tasks
 
-- **Want to create a microservice with multiple data jobs?** → See [Multiple Jobs Example](docs/multiple-jobs-example.md)
-- **Need synchronous jobs for quick operations?** → See [Synchronous Jobs Guide](docs/sync-jobs.md)
-- **Need to enrich data from third-party providers?** → See [Data Enrichment Guide](docs/data-enrichment.md)
+#### Building Microservices
+- **Want to create a data job microservice from scratch?** → See [Step-by-Step Guide: Data Jobs](docs/data-jobs/step-by-step-guide.md)
+- **Want to create a data enricher microservice from scratch?** → See [Step-by-Step Guide: Data Enricher Microservice](docs/data-enrichers/enricher-microservice-guide.md)
+- **Want to create a microservice with multiple data jobs?** → See [Multiple Jobs Example](docs/data-jobs/multiple-jobs-example.md)
+
+#### Specific Features
+- **Need synchronous jobs for quick operations?** → See [Synchronous Jobs Guide](docs/data-jobs/sync-jobs.md)
+- **Need to enrich data from third-party providers?** → See [Data Enrichment Guide](docs/data-enrichers/data-enrichment.md)
+- **Need provider-specific custom operations?** → See [Data Enricher Microservice Guide - Section 9](docs/data-enrichers/enricher-microservice-guide.md#9-building-enrichers-with-custom-operations)
 - **Need to understand the abstract base classes?** → See sections 2 and 3 in [Quick Start](#quick-start)
-- **Want JSON logging?** → It's enabled by default! See [Logging](docs/logging.md) for configuration
+- **Want JSON logging?** → It's enabled by default! See [Logging](docs/common/logging.md) for configuration
 - **Need to add observability?** → Use `AbstractResilientDataJobService` or `AbstractResilientSyncDataJobService` - it's automatic!
 
 ## Contributing

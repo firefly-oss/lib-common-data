@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.firefly.common.cache.core.CacheAdapter;
 import com.firefly.common.data.cache.EnrichmentCacheKeyGenerator;
 import com.firefly.common.data.cache.EnrichmentCacheService;
+import com.firefly.common.data.cache.OperationCacheService;
 import com.firefly.common.data.service.DataEnricher;
 import com.firefly.common.data.service.DataEnricherRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -137,5 +138,32 @@ public class DataEnrichmentAutoConfiguration {
             DataEnrichmentProperties properties) {
         log.info("Creating EnrichmentCacheService bean with cache type: {}", cacheAdapter.getCacheType());
         return new EnrichmentCacheService(cacheAdapter, keyGenerator, properties);
+    }
+
+    /**
+     * Creates the operation cache service bean.
+     *
+     * <p>This service is only created when:</p>
+     * <ul>
+     *   <li>Operation cache is enabled via firefly.data.enrichment.operations.cache-enabled=true</li>
+     *   <li>A CacheAdapter bean is available (from lib-common-cache)</li>
+     * </ul>
+     *
+     * <p>The cache service provides tenant-isolated caching of provider operation results.</p>
+     */
+    @Bean
+    @ConditionalOnProperty(
+        prefix = "firefly.data.enrichment.operations",
+        name = "cache-enabled",
+        havingValue = "true",
+        matchIfMissing = true
+    )
+    @ConditionalOnBean(CacheAdapter.class)
+    public OperationCacheService operationCacheService(
+            CacheAdapter cacheAdapter,
+            ObjectMapper objectMapper,
+            DataEnrichmentProperties properties) {
+        log.info("Creating OperationCacheService bean with cache type: {}", cacheAdapter.getCacheType());
+        return new OperationCacheService(cacheAdapter, objectMapper, properties);
     }
 }
