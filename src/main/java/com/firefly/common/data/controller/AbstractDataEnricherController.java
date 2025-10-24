@@ -16,18 +16,28 @@
 
 package com.firefly.common.data.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.firefly.common.data.config.DataEnrichmentProperties;
+import com.firefly.common.data.controller.dto.OperationCatalogResponse;
+import com.firefly.common.data.controller.dto.OperationErrorResponse;
 import com.firefly.common.data.model.EnrichmentApiRequest;
 import com.firefly.common.data.model.EnrichmentApiResponse;
 import com.firefly.common.data.model.EnrichmentRequest;
 import com.firefly.common.data.model.EnrichmentResponse;
+import com.firefly.common.data.operation.ProviderOperation;
+import com.firefly.common.data.operation.ProviderOperationMetadata;
 import com.firefly.common.data.service.DataEnricher;
 import com.firefly.common.data.service.DataEnricherRegistry;
+import com.firefly.common.data.service.TypedDataEnricher;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -118,20 +128,35 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestController
 public abstract class AbstractDataEnricherController implements DataEnricherController {
-    
+
     private final DataEnricher dataEnricher;
     private final DataEnricherRegistry enricherRegistry;
-    
+    private final DataEnrichmentProperties enrichmentProperties;
+
+    @Autowired(required = false)
+    private ObjectMapper objectMapper;
+
     /**
      * Constructor with enricher and registry dependencies.
      *
      * @param dataEnricher the data enricher implementation
      * @param enricherRegistry the enricher registry for listing providers
+     * @param enrichmentProperties enrichment configuration properties
+     */
+    protected AbstractDataEnricherController(DataEnricher dataEnricher,
+                                            DataEnricherRegistry enricherRegistry,
+                                            DataEnrichmentProperties enrichmentProperties) {
+        this.dataEnricher = dataEnricher;
+        this.enricherRegistry = enricherRegistry;
+        this.enrichmentProperties = enrichmentProperties;
+    }
+
+    /**
+     * Constructor without enrichment properties for backward compatibility.
      */
     protected AbstractDataEnricherController(DataEnricher dataEnricher,
                                             DataEnricherRegistry enricherRegistry) {
-        this.dataEnricher = dataEnricher;
-        this.enricherRegistry = enricherRegistry;
+        this(dataEnricher, enricherRegistry, null);
     }
 
     /**
@@ -201,6 +226,55 @@ public abstract class AbstractDataEnricherController implements DataEnricherCont
                             error.getMessage(),
                             error);
                 });
+    }
+
+    @Override
+    public Flux<EnrichmentApiResponse> enrichBatch(List<EnrichmentApiRequest> apiRequests) {
+        if (apiRequests == null || apiRequests.isEmpty()) {
+            log.warn("Received empty batch enrichment request");
+            return Flux.empty();
+        }
+
+        int batchSize = apiRequests.size();
+        int maxBatchSize = enrichmentProperties != null ? enrichmentProperties.getMaxBatchSize() : 100;
+
+        if (batchSize > maxBatchSize) {
+            log.error("Batch size {} exceeds maximum allowed size {}", batchSize, maxBatchSize);
+            return Flux.error(new IllegalArgumentException(
+                String.format("Batch size %d exceeds maximum allowed size %d", batchSize, maxBatchSize)
+            ));
+        }
+
+        log.info("Received batch enrichment request - provider: {}, batchSize: {}",
+                dataEnricher.getProviderName(), batchSize);
+
+        // Convert API requests to domain requests
+        List<EnrichmentRequest> domainRequests = apiRequests.stream()
+                .map(this::convertToDomainRequest)
+                .collect(Collectors.toList());
+
+        // Execute batch enrichment
+        return dataEnricher.enrichBatch(domainRequests)
+                .map(this::convertToApiResponse)
+                .doOnNext(response -> {
+                    if (response.isSuccess()) {
+                        log.debug("Batch item enriched successfully - type: {}, provider: {}, fieldsEnriched: {}, requestId: {}",
+                                response.getEnrichmentType(),
+                                response.getProviderName(),
+                                response.getFieldsEnriched(),
+                                response.getRequestId());
+                    } else {
+                        log.warn("Batch item enrichment failed - type: {}, provider: {}, message: {}, requestId: {}",
+                                response.getEnrichmentType(),
+                                response.getProviderName(),
+                                response.getMessage(),
+                                response.getRequestId());
+                    }
+                })
+                .doOnComplete(() -> log.info("Batch enrichment completed - provider: {}, batchSize: {}",
+                        dataEnricher.getProviderName(), batchSize))
+                .doOnError(error -> log.error("Batch enrichment failed for provider {}: {}",
+                        dataEnricher.getProviderName(), error.getMessage(), error));
     }
 
     @Override
@@ -299,39 +373,70 @@ public abstract class AbstractDataEnricherController implements DataEnricherCont
      * <p>This endpoint returns the catalog of auxiliary operations that the provider
      * exposes, such as ID lookups, entity matching, validation, etc.</p>
      *
+     * <p>Operations are automatically discovered from the enricher's {@code getOperations()}
+     * method, which returns a list of {@link ProviderOperation} instances.</p>
+     *
      * <p><b>Example Response:</b></p>
      * <pre>{@code
      * {
-     *   "providerName": "Equifax Spain",
+     *   "providerName": "Credit Bureau Provider",
      *   "operations": [
      *     {
      *       "operationId": "search-company",
-     *       "path": "/api/v1/enrichment/equifax-spain/search-company",
+     *       "path": "/api/v1/enrichment/credit-bureau/search-company",
      *       "method": "GET",
-     *       "description": "Search for a company by name or CIF",
-     *       "tags": ["lookup", "search"]
+     *       "description": "Search for a company by name or tax ID to obtain provider internal ID",
+     *       "tags": ["lookup", "search"],
+     *       "requiresAuth": true,
+     *       "requestType": "CompanySearchRequest",
+     *       "responseType": "CompanySearchResponse",
+     *       "requestSchema": { ... JSON Schema ... },
+     *       "responseSchema": { ... JSON Schema ... },
+     *       "requestExample": {
+     *         "companyName": "Acme Corp",
+     *         "taxId": "TAX-12345678"
+     *       },
+     *       "responseExample": {
+     *         "providerId": "PROV-12345",
+     *         "companyName": "ACME CORPORATION",
+     *         "taxId": "TAX-12345678",
+     *         "confidence": 0.95
+     *       }
      *     }
      *   ]
      * }
      * }</pre>
      *
-     * @return the operation catalog
+     * @return the operation catalog with JSON schemas and examples
      */
     @GetMapping("/operations")
-    public Mono<ResponseEntity<Map<String, Object>>> listOperations() {
+    public Mono<ResponseEntity<OperationCatalogResponse>> listOperations() {
         log.info("Received request to list operations for provider: {}", dataEnricher.getProviderName());
 
-        if (!(dataEnricher instanceof ProviderOperationCatalog)) {
-            log.debug("Provider {} does not implement ProviderOperationCatalog",
+        // Check if enricher supports operations
+        if (!(dataEnricher instanceof TypedDataEnricher)) {
+            log.debug("Provider {} is not a TypedDataEnricher - no operations available",
                     dataEnricher.getProviderName());
-            return Mono.just(ResponseEntity.ok(Map.of(
-                "providerName", dataEnricher.getProviderName(),
-                "operations", List.of()
-            )));
+            return Mono.just(ResponseEntity.ok(
+                OperationCatalogResponse.builder()
+                    .providerName(dataEnricher.getProviderName())
+                    .operations(List.of())
+                    .build()
+            ));
         }
 
-        ProviderOperationCatalog catalog = (ProviderOperationCatalog) dataEnricher;
-        List<ProviderOperation> operations = catalog.getOperationCatalog();
+        TypedDataEnricher<?, ?, ?> typedEnricher = (TypedDataEnricher<?, ?, ?>) dataEnricher;
+        List<ProviderOperation<?, ?>> operations = typedEnricher.getOperations();
+
+        if (operations.isEmpty()) {
+            log.debug("Provider {} has no operations defined", dataEnricher.getProviderName());
+            return Mono.just(ResponseEntity.ok(
+                OperationCatalogResponse.builder()
+                    .providerName(dataEnricher.getProviderName())
+                    .operations(List.of())
+                    .build()
+            ));
+        }
 
         // Get base path from @RequestMapping
         RequestMapping mapping = this.getClass().getAnnotation(RequestMapping.class);
@@ -339,44 +444,84 @@ public abstract class AbstractDataEnricherController implements DataEnricherCont
             ? mapping.value()[0]
             : "";
 
-        // Convert operations to response format with full paths
-        List<Map<String, Object>> operationList = operations.stream()
-            .map(op -> Map.of(
-                "operationId", op.getOperationId(),
-                "path", op.getFullPath(basePath),
-                "method", op.getHttpMethod(),
-                "description", op.getDescription(),
-                "tags", op.getTags(),
-                "requiresAuth", op.isRequiresAuth(),
-                "requestExample", op.getRequestExample(),
-                "responseExample", op.getResponseExample()
-            ))
-            .collect(Collectors.toList());
+        // Convert operations to response format with full metadata
+        List<OperationCatalogResponse.OperationInfo> operationList = operations.stream()
+            .map(op -> {
+                ProviderOperationMetadata metadata = op.getMetadata();
+
+                return OperationCatalogResponse.OperationInfo.builder()
+                    .operationId(metadata.getOperationId())
+                    .path(metadata.getFullPath(basePath))
+                    .method(metadata.getHttpMethod())
+                    .description(metadata.getDescription())
+                    .tags(List.of(metadata.getTags()))
+                    .requiresAuth(metadata.isRequiresAuth())
+                    .requestType(metadata.getRequestTypeName())
+                    .responseType(metadata.getResponseTypeName())
+                    .requestSchema(metadata.getRequestSchema())
+                    .responseSchema(metadata.getResponseSchema())
+                    .requestExample(metadata.getRequestExample())
+                    .responseExample(metadata.getResponseExample())
+                    .build();
+            })
+            .toList();
 
         log.info("Returning {} operations for provider {}",
                 operationList.size(), dataEnricher.getProviderName());
 
-        return Mono.just(ResponseEntity.ok(Map.of(
-            "providerName", dataEnricher.getProviderName(),
-            "operations", operationList
-        )));
+        return Mono.just(ResponseEntity.ok(
+            OperationCatalogResponse.builder()
+                .providerName(dataEnricher.getProviderName())
+                .operations(operationList)
+                .build()
+        ));
     }
 
     /**
      * Executes a provider-specific operation.
      *
-     * <p>This is a generic endpoint that routes to the appropriate operation handler
-     * based on the operationId path variable.</p>
+     * <p>This endpoint routes to the appropriate operation handler based on the operationId.
+     * It automatically handles:</p>
+     * <ul>
+     *   <li>Request deserialization from JSON to typed DTO</li>
+     *   <li>Operation execution with type safety</li>
+     *   <li>Response serialization from typed DTO to JSON</li>
+     *   <li>Error handling and logging</li>
+     * </ul>
      *
-     * <p><b>Note:</b> This is a fallback handler. Enrichers can also define custom
-     * controller methods for better type safety and documentation.</p>
+     * <p><b>Example Request (GET with query params):</b></p>
+     * <pre>{@code
+     * GET /api/v1/enrichment/credit-bureau/operation/search-company?companyName=Acme%20Corp&taxId=TAX-12345678
+     * }</pre>
+     *
+     * <p><b>Example Request (POST with JSON body):</b></p>
+     * <pre>{@code
+     * POST /api/v1/enrichment/credit-bureau/operation/search-company
+     * Content-Type: application/json
+     *
+     * {
+     *   "companyName": "Acme Corp",
+     *   "taxId": "TAX-12345678"
+     * }
+     * }</pre>
+     *
+     * <p><b>Example Response:</b></p>
+     * <pre>{@code
+     * {
+     *   "providerId": "PROV-12345",
+     *   "companyName": "ACME CORPORATION",
+     *   "taxId": "TAX-12345678",
+     *   "confidence": 0.95
+     * }
+     * }</pre>
      *
      * @param operationId the operation identifier
-     * @param parameters the operation parameters (from query params or request body)
+     * @param queryParams query parameters (for GET requests)
+     * @param bodyParams request body parameters (for POST requests)
      * @return the operation result
      */
     @RequestMapping(value = "/operation/{operationId}", method = {RequestMethod.GET, RequestMethod.POST})
-    public Mono<ResponseEntity<Map<String, Object>>> executeProviderOperation(
+    public Mono<ResponseEntity<Object>> executeProviderOperation(
             @PathVariable String operationId,
             @RequestParam(required = false) Map<String, Object> queryParams,
             @RequestBody(required = false) Map<String, Object> bodyParams) {
@@ -384,26 +529,55 @@ public abstract class AbstractDataEnricherController implements DataEnricherCont
         log.info("Received request to execute operation {} for provider {}",
                 operationId, dataEnricher.getProviderName());
 
-        if (!(dataEnricher instanceof ProviderOperationCatalog)) {
-            log.warn("Provider {} does not implement ProviderOperationCatalog",
+        // Check if enricher supports operations
+        if (!(dataEnricher instanceof TypedDataEnricher)) {
+            log.warn("Provider {} is not a TypedDataEnricher - operations not supported",
                     dataEnricher.getProviderName());
-            return Mono.just(ResponseEntity.badRequest().body(Map.of(
-                "error", "Provider does not support custom operations",
-                "providerName", dataEnricher.getProviderName()
-            )));
+            return Mono.just(ResponseEntity.badRequest().body(
+                OperationErrorResponse.builder()
+                    .error("Provider does not support operations")
+                    .operationId(operationId)
+                    .providerName(dataEnricher.getProviderName())
+                    .build()
+            ));
+        }
+
+        TypedDataEnricher<?, ?, ?> typedEnricher = (TypedDataEnricher<?, ?, ?>) dataEnricher;
+        List<ProviderOperation<?, ?>> operations = typedEnricher.getOperations();
+
+        // Find the operation by ID
+        ProviderOperation<?, ?> operation = operations.stream()
+            .filter(op -> op.getMetadata().getOperationId().equals(operationId))
+            .findFirst()
+            .orElse(null);
+
+        if (operation == null) {
+            log.warn("Operation {} not found for provider {}", operationId, dataEnricher.getProviderName());
+            return Mono.just(ResponseEntity.badRequest().body(
+                OperationErrorResponse.builder()
+                    .error("Operation not found: " + operationId)
+                    .operationId(operationId)
+                    .providerName(dataEnricher.getProviderName())
+                    .availableOperations(operations.stream()
+                        .map(op -> op.getMetadata().getOperationId())
+                        .collect(Collectors.toList()))
+                    .build()
+            ));
         }
 
         // Merge query params and body params (body takes precedence)
-        Map<String, Object> parameters = queryParams != null ? queryParams : Map.of();
-        if (bodyParams != null && !bodyParams.isEmpty()) {
-            parameters = bodyParams;
+        Map<String, Object> parameters = new HashMap<>();
+        if (queryParams != null) {
+            parameters.putAll(queryParams);
         }
-
-        ProviderOperationCatalog catalog = (ProviderOperationCatalog) dataEnricher;
+        if (bodyParams != null && !bodyParams.isEmpty()) {
+            parameters.putAll(bodyParams);
+        }
 
         log.debug("Executing operation {} with parameters: {}", operationId, parameters);
 
-        return catalog.executeOperation(operationId, parameters)
+        // Convert parameters to request DTO and execute
+        return executeTypedOperation(operation, parameters)
             .map(ResponseEntity::ok)
             .doOnSuccess(response -> {
                 log.info("Operation {} completed successfully for provider {}",
@@ -412,12 +586,44 @@ public abstract class AbstractDataEnricherController implements DataEnricherCont
             .onErrorResume(error -> {
                 log.error("Operation {} failed for provider {}: {}",
                         operationId, dataEnricher.getProviderName(), error.getMessage(), error);
-                return Mono.just(ResponseEntity.badRequest().body(Map.of(
-                    "error", error.getMessage(),
-                    "operationId", operationId,
-                    "providerName", dataEnricher.getProviderName()
-                )));
+                return Mono.just(ResponseEntity.badRequest().body(
+                    OperationErrorResponse.builder()
+                        .error(error.getMessage())
+                        .operationId(operationId)
+                        .providerName(dataEnricher.getProviderName())
+                        .build()
+                ));
             });
+    }
+
+    /**
+     * Executes a typed operation with automatic request/response conversion.
+     *
+     * @param operation the operation to execute
+     * @param parameters the request parameters as a map
+     * @return the operation response
+     */
+    @SuppressWarnings("unchecked")
+    private <TRequest, TResponse> Mono<TResponse> executeTypedOperation(
+            ProviderOperation<TRequest, TResponse> operation,
+            Map<String, Object> parameters) {
+
+        try {
+            // Convert parameters map to request DTO
+            TRequest request;
+            if (objectMapper != null) {
+                request = objectMapper.convertValue(parameters, operation.getRequestType());
+            } else {
+                throw new IllegalStateException("ObjectMapper not available for request conversion");
+            }
+
+            // Execute the operation
+            return operation.execute(request);
+        } catch (Exception e) {
+            log.error("Failed to convert request parameters to DTO: {}", e.getMessage(), e);
+            return Mono.error(new IllegalArgumentException(
+                "Invalid request parameters: " + e.getMessage(), e));
+        }
     }
 }
 

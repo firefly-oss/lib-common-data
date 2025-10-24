@@ -27,14 +27,18 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.util.List;
 
 /**
  * Controller interface for data enrichment endpoints.
  *
  * <p>This interface defines the standard REST API endpoints for data enrichment operations:
  * <ul>
- *   <li>POST /enrich: Enrich data using the configured provider</li>
+ *   <li>POST /enrich: Enrich a single data item using the configured provider</li>
+ *   <li>POST /enrich/batch: Enrich multiple data items in a batch operation</li>
  *   <li>GET /health: Check health of the enrichment provider</li>
  * </ul>
  *
@@ -61,6 +65,7 @@ import reactor.core.publisher.Mono;
  * <p>This creates the following endpoints:</p>
  * <pre>
  * POST   /api/v1/enrichment/equifax-spain-credit/enrich
+ * POST   /api/v1/enrichment/equifax-spain-credit/enrich/batch
  * GET    /api/v1/enrichment/equifax-spain-credit/health
  * </pre>
  *
@@ -97,6 +102,38 @@ public interface DataEnricherController {
     @PostMapping("/enrich")
     Mono<EnrichmentApiResponse> enrich(
         @Valid @RequestBody EnrichmentApiRequest request
+    );
+
+    /**
+     * Enriches multiple data items in a batch operation.
+     *
+     * <p>This endpoint processes multiple enrichment requests in parallel,
+     * with automatic caching and error handling for individual items.</p>
+     *
+     * <p><b>Features:</b></p>
+     * <ul>
+     *   <li>Parallel processing with configurable concurrency</li>
+     *   <li>Cache integration - checks cache before calling provider</li>
+     *   <li>Individual error handling - one failure doesn't fail the entire batch</li>
+     *   <li>Maintains request order in response</li>
+     * </ul>
+     *
+     * @param requests the list of enrichment requests
+     * @return a Flux emitting enrichment responses in the same order as requests
+     */
+    @Operation(
+        summary = "Batch enrich data",
+        description = "Enriches multiple data items in a single batch operation with parallel processing. " +
+                     "Each request is processed independently, and failures are returned as individual error responses."
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Batch enrichment completed (check individual responses for errors)"),
+        @ApiResponse(responseCode = "400", description = "Invalid request parameters or batch size exceeded"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
+    @PostMapping("/enrich/batch")
+    Flux<EnrichmentApiResponse> enrichBatch(
+        @Valid @RequestBody List<EnrichmentApiRequest> requests
     );
 
     /**
