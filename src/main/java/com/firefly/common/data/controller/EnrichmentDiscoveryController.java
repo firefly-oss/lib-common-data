@@ -16,6 +16,7 @@
 
 package com.firefly.common.data.controller;
 
+import com.firefly.common.data.enrichment.EnricherMetadataReader;
 import com.firefly.common.data.service.DataEnricher;
 import com.firefly.common.data.service.DataEnricherRegistry;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,6 +35,7 @@ import reactor.core.publisher.Mono;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -54,15 +56,18 @@ import java.util.stream.Collectors;
  * Microservice: core-data-provider-a-enricher
  * ├── ProviderASpainCreditReportEnricher
  * │   ├── providerName: "Provider A Spain"
- * │   ├── supportedTypes: ["credit-report", "credit-score"]
+ * │   ├── type: "credit-report"
+ * │   ├── tenantId: "550e8400-e29b-41d4-a716-446655440001" (Spain)
  * │   └── endpoint: POST /api/v1/enrichment/provider-a-spain-credit/enrich
  * ├── ProviderAUSACreditReportEnricher
  * │   ├── providerName: "Provider A USA"
- * │   ├── supportedTypes: ["credit-report", "business-credit"]
+ * │   ├── type: "credit-report"
+ * │   ├── tenantId: "550e8400-e29b-41d4-a716-446655440002" (USA)
  * │   └── endpoint: POST /api/v1/enrichment/provider-a-usa-credit/enrich
  * └── ProviderASpainCompanyProfileEnricher
  *     ├── providerName: "Provider A Spain"
- *     ├── supportedTypes: ["company-profile"]
+ *     ├── type: "company-profile"
+ *     ├── tenantId: "550e8400-e29b-41d4-a716-446655440001" (Spain)
  *     └── endpoint: POST /api/v1/enrichment/provider-a-spain-company/enrich
  *
  * Microservice: core-data-provider-b-enricher
@@ -72,39 +77,56 @@ import java.util.stream.Collectors;
  * 
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
- * // List all providers in this microservice
+ * // List all enrichers in this microservice
  * GET /api/v1/enrichment/providers
  * →  [
  *      {
  *        "providerName": "Provider A Spain",
- *        "supportedTypes": ["credit-report", "credit-score", "company-profile"],
- *        "description": "Provider A Spain data enrichment services",
- *        "endpoints": [
- *          "/api/v1/enrichment/provider-a-spain-credit/enrich",
- *          "/api/v1/enrichment/provider-a-spain-company/enrich"
- *        ]
+ *        "type": "credit-report",
+ *        "tenantId": "550e8400-e29b-41d4-a716-446655440001",
+ *        "description": "Provider A Spain credit report enrichment",
+ *        "endpoint": "/api/v1/enrichment/provider-a-spain-credit/enrich",
+ *        "priority": 100,
+ *        "tags": ["credit", "spain"]
+ *      },
+ *      {
+ *        "providerName": "Provider A Spain",
+ *        "type": "company-profile",
+ *        "tenantId": "550e8400-e29b-41d4-a716-446655440001",
+ *        "description": "Provider A Spain company profile enrichment",
+ *        "endpoint": "/api/v1/enrichment/provider-a-spain-company/enrich",
+ *        "priority": 100,
+ *        "tags": ["company", "spain"]
  *      },
  *      {
  *        "providerName": "Provider A USA",
- *        "supportedTypes": ["credit-report", "business-credit"],
- *        "description": "Provider A USA data enrichment services",
- *        "endpoints": [
- *          "/api/v1/enrichment/provider-a-usa-credit/enrich"
- *        ]
+ *        "type": "credit-report",
+ *        "tenantId": "550e8400-e29b-41d4-a716-446655440002",
+ *        "description": "Provider A USA credit report enrichment",
+ *        "endpoint": "/api/v1/enrichment/provider-a-usa-credit/enrich",
+ *        "priority": 100,
+ *        "tags": ["credit", "usa"]
  *      }
  *    ]
  *
- * // List only providers that support a specific enrichment type
- * GET /api/v1/enrichment/providers?enrichmentType=credit-report
+ * // List only enrichers that support a specific enrichment type
+ * GET /api/v1/enrichment/providers?type=credit-report
  * →  [
- *      { "providerName": "Provider A Spain", ... },
- *      { "providerName": "Provider A USA", ... }
+ *      { "providerName": "Provider A Spain", "type": "credit-report", "tenantId": "550e...", ... },
+ *      { "providerName": "Provider A USA", "type": "credit-report", "tenantId": "550e...", ... }
  *    ]
  *
- * // List only providers that support a specific enrichment type
- * GET /api/v1/enrichment/providers?enrichmentType=company-profile
+ * // List only enrichers for a specific tenant
+ * GET /api/v1/enrichment/providers?tenantId=550e8400-e29b-41d4-a716-446655440001
  * →  [
- *      { "providerName": "Provider A Spain", ... }
+ *      { "providerName": "Provider A Spain", "type": "credit-report", ... },
+ *      { "providerName": "Provider A Spain", "type": "company-profile", ... }
+ *    ]
+ *
+ * // Combine filters: type + tenant
+ * GET /api/v1/enrichment/providers?type=credit-report&tenantId=550e8400-e29b-41d4-a716-446655440001
+ * →  [
+ *      { "providerName": "Provider A Spain", "type": "credit-report", ... }
  *    ]
  * }</pre>
  * 
@@ -156,87 +178,73 @@ public class EnrichmentDiscoveryController {
     @GetMapping("/providers")
     public Mono<List<ProviderInfo>> listProviders(
             @Parameter(description = "Optional enrichment type to filter providers (e.g., 'credit-report', 'company-profile')")
-            @RequestParam(required = false) String enrichmentType) {
-        
-        log.info("Received request to list providers" + 
-                (enrichmentType != null ? " for enrichment type: " + enrichmentType : ""));
-        
+            @RequestParam(required = false) String type,
+            @Parameter(description = "Optional tenant ID (UUID) to filter providers for a specific tenant")
+            @RequestParam(required = false) UUID tenantId) {
+
+        log.info("Received request to list providers" +
+                (type != null ? " for type: " + type : "") +
+                (tenantId != null ? " for tenant: " + tenantId : ""));
+
         return Mono.fromSupplier(() -> {
             var enrichers = enricherRegistry.getAllEnrichers().stream();
-            
+
             // Filter by enrichment type if specified
-            if (enrichmentType != null && !enrichmentType.isEmpty()) {
-                enrichers = enrichers.filter(e -> e.supportsEnrichmentType(enrichmentType));
+            if (type != null && !type.isEmpty()) {
+                enrichers = enrichers.filter(e -> e.supportsEnrichmentType(type));
             }
-            
-            // Group by provider name to avoid duplicates
+
+            // Filter by tenant if specified
+            if (tenantId != null) {
+                enrichers = enrichers.filter(e -> {
+                    UUID enricherTenantId = e.getTenantId();
+                    // Include enrichers for this tenant OR global enrichers
+                    return tenantId.equals(enricherTenantId) ||
+                           EnricherMetadataReader.GLOBAL_TENANT_ID.equals(enricherTenantId);
+                });
+            }
+
+            // Map each enricher to a ProviderInfo (one enricher = one entry)
             var providers = enrichers
-                    .collect(Collectors.groupingBy(DataEnricher::getProviderName))
-                    .entrySet()
-                    .stream()
-                    .map(entry -> {
-                        String providerName = entry.getKey();
-                        List<DataEnricher> enrichersForProvider = entry.getValue();
-                        
-                        // Collect all unique supported types for this provider
-                        String[] allSupportedTypes = enrichersForProvider.stream()
-                                .flatMap(e -> java.util.Arrays.stream(e.getSupportedEnrichmentTypes()))
-                                .distinct()
-                                .sorted()
-                                .toArray(String[]::new);
+                    .map(enricher -> {
+                        String providerName = enricher.getProviderName();
+                        UUID enricherTenantId = enricher.getTenantId();
+                        String description = enricher.getEnricherDescription();
+                        String endpoint = enricher.getEnrichmentEndpoint();
+                        int priority = enricher.getPriority();
+                        List<String> tags = enricher.getTags();
 
-                        // Use description from first enricher (they should all be the same for same provider)
-                        String description = enrichersForProvider.get(0).getEnricherDescription();
-
-                        // Collect all endpoints for this provider
-                        String[] endpoints = enrichersForProvider.stream()
-                                .map(DataEnricher::getEnrichmentEndpoint)
-                                .filter(endpoint -> endpoint != null && !endpoint.isEmpty())
-                                .distinct()
-                                .sorted()
-                                .toArray(String[]::new);
-
-                        // Collect all provider-specific operations
-                        List<Map<String, Object>> allOperations = new ArrayList<>();
-                        for (DataEnricher enricher : enrichersForProvider) {
-                            if (enricher instanceof ProviderOperationCatalog catalog) {
-                                List<ProviderOperation> operations = catalog.getOperationCatalog();
-                                if (operations != null && !operations.isEmpty()) {
-                                    // Get base path from enricher's endpoint
-                                    String endpoint = enricher.getEnrichmentEndpoint();
-                                    String basePath = endpoint != null && endpoint.endsWith("/enrich")
-                                        ? endpoint.substring(0, endpoint.length() - "/enrich".length())
-                                        : "";
-
-                                    for (ProviderOperation op : operations) {
-                                        allOperations.add(Map.of(
-                                            "operationId", op.getOperationId(),
-                                            "path", op.getFullPath(basePath),
-                                            "method", op.getHttpMethod(),
-                                            "description", op.getDescription(),
-                                            "tags", op.getTags(),
-                                            "requiresAuth", op.isRequiresAuth()
-                                        ));
-                                    }
-                                }
-                            }
-                        }
+                        // Get supported types - use the first one as the primary type
+                        List<String> supportedTypes = enricher.getSupportedEnrichmentTypes();
+                        String primaryType = (supportedTypes != null && !supportedTypes.isEmpty())
+                                ? supportedTypes.get(0)
+                                : "unknown";
 
                         return new ProviderInfo(
                             providerName,
-                            allSupportedTypes,
+                            primaryType,
+                            enricherTenantId,
                             description,
-                            endpoints,
-                            allOperations.isEmpty() ? null : allOperations
+                            endpoint,
+                            priority,
+                            tags
                         );
                     })
-                    .sorted((a, b) -> a.providerName().compareTo(b.providerName()))
+                    .sorted((a, b) -> {
+                        // Sort by provider name, then by type, then by priority (desc)
+                        int nameCompare = a.providerName().compareTo(b.providerName());
+                        if (nameCompare != 0) return nameCompare;
+                        int typeCompare = a.type().compareTo(b.type());
+                        if (typeCompare != 0) return typeCompare;
+                        return Integer.compare(b.priority(), a.priority());
+                    })
                     .collect(Collectors.toList());
-            
-            log.info("Found {} providers" + 
-                    (enrichmentType != null ? " for enrichment type: " + enrichmentType : ""), 
+
+            log.info("Found {} enrichers" +
+                    (type != null ? " for type: " + type : "") +
+                    (tenantId != null ? " for tenant: " + tenantId : ""),
                     providers.size());
-            
+
             return providers;
         });
     }
@@ -244,27 +252,37 @@ public class EnrichmentDiscoveryController {
     /**
      * Provider information DTO.
      *
+     * <p>Each entry represents ONE enricher (one provider + one type + one tenant).</p>
+     *
      * @param providerName the name of the provider (e.g., "Provider A", "Provider B")
-     * @param supportedTypes array of enrichment types this provider supports
-     * @param description human-readable description of what this provider does
-     * @param endpoints array of REST API endpoints for this provider's enrichers
-     * @param operations list of provider-specific operations (lookups, validations, etc.)
+     * @param type the enrichment type this enricher supports (e.g., "credit-report", "company-profile")
+     * @param tenantId the tenant ID this enricher is configured for (or global tenant UUID)
+     * @param description human-readable description of what this enricher does
+     * @param endpoint the REST API endpoint for this enricher's enrich operation
+     * @param priority the priority of this enricher (higher = preferred when multiple match)
+     * @param tags list of tags for categorization and filtering
      */
     public record ProviderInfo(
         @Parameter(description = "Provider name (e.g., 'Provider A', 'Provider B')")
         String providerName,
 
-        @Parameter(description = "Array of enrichment types this provider supports")
-        String[] supportedTypes,
+        @Parameter(description = "Enrichment type this enricher supports (e.g., 'credit-report', 'company-profile')")
+        String type,
 
-        @Parameter(description = "Human-readable description of the provider")
+        @Parameter(description = "Tenant ID this enricher is configured for (or global tenant UUID)")
+        UUID tenantId,
+
+        @Parameter(description = "Human-readable description of the enricher")
         String description,
 
-        @Parameter(description = "Array of REST API endpoints for enrichment operations")
-        String[] endpoints,
+        @Parameter(description = "REST API endpoint for enrichment operations")
+        String endpoint,
 
-        @Parameter(description = "List of provider-specific operations (ID lookups, validations, etc.)")
-        List<Map<String, Object>> operations
+        @Parameter(description = "Priority of this enricher (higher = preferred when multiple match)")
+        int priority,
+
+        @Parameter(description = "Tags for categorization and filtering")
+        List<String> tags
     ) {}
 }
 

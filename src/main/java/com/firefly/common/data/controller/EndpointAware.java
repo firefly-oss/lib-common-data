@@ -27,7 +27,7 @@ package com.firefly.common.data.controller;
  * 
  * <p><b>Usage:</b></p>
  * <pre>{@code
- * public class MyEnricher extends TypedDataEnricher<...> implements EndpointAware {
+ * public class MyEnricher extends DataEnricher<...> implements EndpointAware {
  *     private String enrichmentEndpoint;
  *     
  *     @Override
@@ -42,7 +42,7 @@ package com.firefly.common.data.controller;
  * }
  * }</pre>
  * 
- * <p><b>Note:</b> {@link com.firefly.common.data.service.TypedDataEnricher} already
+ * <p><b>Note:</b> {@link com.firefly.common.data.service.DataEnricher} already
  * implements this interface, so most enrichers don't need to implement it directly.</p>
  */
 public interface EndpointAware {
