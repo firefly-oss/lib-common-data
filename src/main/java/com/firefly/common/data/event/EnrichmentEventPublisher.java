@@ -55,10 +55,10 @@ public class EnrichmentEventPublisher {
     public void publishEnrichmentStarted(EnrichmentRequest request, String providerName) {
         EnrichmentEvent event = EnrichmentEvent.builder()
                 .eventType("ENRICHMENT_STARTED")
-                .enrichmentType(request.getEnrichmentType())
+                .enrichmentType(request.getType())
                 .providerName(providerName)
                 .requestId(request.getRequestId())
-                .tenantId(request.getTenantId())
+                .tenantId(request.getTenantId() != null ? request.getTenantId().toString() : null)
                 .success(true)
                 .message("Enrichment started")
                 .timestamp(Instant.now())
@@ -66,8 +66,8 @@ public class EnrichmentEventPublisher {
                 .build();
         
         publishEvent(event);
-        log.debug("Published enrichment started event: type={}, provider={}, requestId={}", 
-                request.getEnrichmentType(), providerName, request.getRequestId());
+        log.debug("Published enrichment started event: type={}, provider={}, requestId={}",
+                request.getType(), providerName, request.getRequestId());
     }
     
     /**
@@ -78,10 +78,10 @@ public class EnrichmentEventPublisher {
                                           long durationMillis) {
         EnrichmentEvent event = EnrichmentEvent.builder()
                 .eventType("ENRICHMENT_COMPLETED")
-                .enrichmentType(response.getEnrichmentType())
+                .enrichmentType(response.getType())
                 .providerName(response.getProviderName())
                 .requestId(response.getRequestId())
-                .tenantId(request.getTenantId())
+                .tenantId(request.getTenantId() != null ? request.getTenantId().toString() : null)
                 .success(response.isSuccess())
                 .message(response.getMessage())
                 .timestamp(Instant.now())
@@ -92,8 +92,8 @@ public class EnrichmentEventPublisher {
                 .build();
         
         publishEvent(event);
-        log.debug("Published enrichment completed event: type={}, provider={}, success={}, duration={}ms", 
-                response.getEnrichmentType(), response.getProviderName(), 
+        log.debug("Published enrichment completed event: type={}, provider={}, success={}, duration={}ms",
+                response.getType(), response.getProviderName(),
                 response.isSuccess(), durationMillis);
     }
     
@@ -116,10 +116,10 @@ public class EnrichmentEventPublisher {
         
         EnrichmentEvent event = EnrichmentEvent.builder()
                 .eventType("ENRICHMENT_FAILED")
-                .enrichmentType(request.getEnrichmentType())
+                .enrichmentType(request.getType())
                 .providerName(providerName)
                 .requestId(request.getRequestId())
-                .tenantId(request.getTenantId())
+                .tenantId(request.getTenantId() != null ? request.getTenantId().toString() : null)
                 .success(false)
                 .message("Enrichment failed")
                 .error(error)
@@ -129,8 +129,8 @@ public class EnrichmentEventPublisher {
                 .build();
         
         publishEvent(event);
-        log.debug("Published enrichment failed event: type={}, provider={}, error={}", 
-                request.getEnrichmentType(), providerName, error);
+        log.debug("Published enrichment failed event: type={}, provider={}, error={}",
+                request.getType(), providerName, error);
     }
     
     /**

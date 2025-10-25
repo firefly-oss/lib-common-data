@@ -98,7 +98,7 @@ public class DataEnrichmentAutoConfiguration {
         havingValue = "true",
         matchIfMissing = true
     )
-    public DataEnricherRegistry dataEnricherRegistry(List<DataEnricher> enrichers) {
+    public DataEnricherRegistry dataEnricherRegistry(List<DataEnricher<?, ?, ?>> enrichers) {
         log.info("Creating DataEnricherRegistry bean with {} enrichers", enrichers.size());
         return new DataEnricherRegistry(enrichers);
     }

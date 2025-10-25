@@ -28,6 +28,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.UUID;
 
 /**
  * Generates cache keys for enrichment requests with tenant isolation.
@@ -90,7 +91,7 @@ public class EnrichmentCacheKeyGenerator {
      */
     public String generateKey(EnrichmentRequest request, String providerName) {
         String tenantId = getTenantId(request);
-        String enrichmentType = request.getEnrichmentType();
+        String enrichmentType = request.getType();
         String parametersHash = hashParameters(request.getParameters());
         
         return String.join(SEPARATOR, 
@@ -157,8 +158,8 @@ public class EnrichmentCacheKeyGenerator {
      * @return the tenant ID or "default" if not specified
      */
     private String getTenantId(EnrichmentRequest request) {
-        String tenantId = request.getTenantId();
-        return tenantId != null && !tenantId.isBlank() ? tenantId : DEFAULT_TENANT;
+        UUID tenantId = request.getTenantId();
+        return tenantId != null ? tenantId.toString() : DEFAULT_TENANT;
     }
 
     /**
