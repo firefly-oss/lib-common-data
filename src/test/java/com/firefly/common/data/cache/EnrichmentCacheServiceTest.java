@@ -32,6 +32,7 @@ import reactor.test.StepVerifier;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -42,6 +43,8 @@ import static org.mockito.Mockito.*;
  */
 @ExtendWith(MockitoExtension.class)
 class EnrichmentCacheServiceTest {
+
+    private static final UUID TENANT_ABC = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
 
     @Mock
     private CacheAdapter cacheAdapter;
@@ -70,7 +73,7 @@ class EnrichmentCacheServiceTest {
         properties.setCacheEnabled(false);
         cacheService = new EnrichmentCacheService(cacheAdapter, keyGenerator, properties);
 
-        EnrichmentRequest request = createRequest("12345", "tenant-abc");
+        EnrichmentRequest request = createRequest("12345", TENANT_ABC.toString());
 
         // When
         Mono<Optional<EnrichmentResponse>> result = cacheService.get(request, "TestProvider");
@@ -88,7 +91,7 @@ class EnrichmentCacheServiceTest {
     @Test
     void get_shouldReturnCachedValueWhenPresent() {
         // Given
-        EnrichmentRequest request = createRequest("12345", "tenant-abc");
+        EnrichmentRequest request = createRequest("12345", TENANT_ABC.toString());
         EnrichmentResponse cachedResponse = createResponse(true);
         
         when(keyGenerator.generateKey(request, "TestProvider")).thenReturn("cache-key-123");
@@ -113,7 +116,7 @@ class EnrichmentCacheServiceTest {
     @Test
     void get_shouldReturnEmptyWhenNotInCache() {
         // Given
-        EnrichmentRequest request = createRequest("12345", "tenant-abc");
+        EnrichmentRequest request = createRequest("12345", TENANT_ABC.toString());
         
         when(keyGenerator.generateKey(request, "TestProvider")).thenReturn("cache-key-123");
         when(cacheAdapter.get(eq("cache-key-123"), eq(EnrichmentResponse.class)))
@@ -134,7 +137,7 @@ class EnrichmentCacheServiceTest {
         properties.setCacheEnabled(false);
         cacheService = new EnrichmentCacheService(cacheAdapter, keyGenerator, properties);
 
-        EnrichmentRequest request = createRequest("12345", "tenant-abc");
+        EnrichmentRequest request = createRequest("12345", TENANT_ABC.toString());
         EnrichmentResponse response = createResponse(true);
 
         // When
@@ -152,7 +155,7 @@ class EnrichmentCacheServiceTest {
     @Test
     void put_shouldCacheSuccessfulResponse() {
         // Given
-        EnrichmentRequest request = createRequest("12345", "tenant-abc");
+        EnrichmentRequest request = createRequest("12345", TENANT_ABC.toString());
         EnrichmentResponse response = createResponse(true);
         
         when(keyGenerator.generateKey(request, "TestProvider")).thenReturn("cache-key-123");
@@ -173,7 +176,7 @@ class EnrichmentCacheServiceTest {
     @Test
     void put_shouldNotCacheFailedResponse() {
         // Given
-        EnrichmentRequest request = createRequest("12345", "tenant-abc");
+        EnrichmentRequest request = createRequest("12345", TENANT_ABC.toString());
         EnrichmentResponse response = createResponse(false);
 
         // When
@@ -191,7 +194,7 @@ class EnrichmentCacheServiceTest {
     @Test
     void evict_shouldEvictCacheKey() {
         // Given
-        EnrichmentRequest request = createRequest("12345", "tenant-abc");
+        EnrichmentRequest request = createRequest("12345", TENANT_ABC.toString());
 
         when(keyGenerator.generateKey(request, "TestProvider")).thenReturn("cache-key-123");
         when(cacheAdapter.evict("cache-key-123")).thenReturn(Mono.just(true));
@@ -268,7 +271,7 @@ class EnrichmentCacheServiceTest {
         properties.setCacheTtlSeconds(7200); // 2 hours
         cacheService = new EnrichmentCacheService(cacheAdapter, keyGenerator, properties);
         
-        EnrichmentRequest request = createRequest("12345", "tenant-abc");
+        EnrichmentRequest request = createRequest("12345", TENANT_ABC.toString());
         EnrichmentResponse response = createResponse(true);
         
         when(keyGenerator.generateKey(request, "TestProvider")).thenReturn("cache-key-123");
@@ -288,7 +291,7 @@ class EnrichmentCacheServiceTest {
     @Test
     void get_shouldHandleCacheAdapterError() {
         // Given
-        EnrichmentRequest request = createRequest("12345", "tenant-abc");
+        EnrichmentRequest request = createRequest("12345", TENANT_ABC.toString());
         
         when(keyGenerator.generateKey(request, "TestProvider")).thenReturn("cache-key-123");
         when(cacheAdapter.get(eq("cache-key-123"), eq(EnrichmentResponse.class)))
@@ -306,7 +309,7 @@ class EnrichmentCacheServiceTest {
     @Test
     void put_shouldHandleCacheAdapterError() {
         // Given
-        EnrichmentRequest request = createRequest("12345", "tenant-abc");
+        EnrichmentRequest request = createRequest("12345", TENANT_ABC.toString());
         EnrichmentResponse response = createResponse(true);
         
         when(keyGenerator.generateKey(request, "TestProvider")).thenReturn("cache-key-123");
@@ -323,9 +326,9 @@ class EnrichmentCacheServiceTest {
 
     private EnrichmentRequest createRequest(String companyId, String tenantId) {
         return EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of("companyId", companyId))
-                .tenantId(tenantId)
+                .tenantId(java.util.UUID.fromString(tenantId))
                 .build();
     }
 
@@ -334,7 +337,7 @@ class EnrichmentCacheServiceTest {
                 .success(success)
                 .enrichedData(Map.of("companyId", "12345", "name", "Test Company"))
                 .providerName("TestProvider")
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .message(success ? "Success" : "Failed")
                 .build();
     }

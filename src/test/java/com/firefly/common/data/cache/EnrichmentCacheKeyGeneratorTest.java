@@ -22,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,6 +31,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Tests cache key generation with tenant isolation.
  */
 class EnrichmentCacheKeyGeneratorTest {
+
+    private static final UUID TENANT_ABC = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+    private static final UUID TENANT_XYZ = UUID.fromString("550e8400-e29b-41d4-a716-446655440001");
+    private static final UUID TENANT_WITH_SPECIAL_CHARS = UUID.fromString("550e8400-e29b-41d4-a716-446655440002");
 
     private EnrichmentCacheKeyGenerator keyGenerator;
 
@@ -42,16 +47,16 @@ class EnrichmentCacheKeyGeneratorTest {
     void generateKey_shouldIncludeTenantId() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of("companyId", "12345"))
-                .tenantId("tenant-abc")
+                .tenantId(TENANT_ABC)
                 .build();
 
         // When
         String key = keyGenerator.generateKey(request, "TestProvider");
 
         // Then
-        assertThat(key).startsWith("enrichment:tenant-abc:");
+        assertThat(key).startsWith("enrichment:" + TENANT_ABC + ":");
         assertThat(key).contains("TestProvider");
         assertThat(key).contains("company-profile");
     }
@@ -60,7 +65,7 @@ class EnrichmentCacheKeyGeneratorTest {
     void generateKey_shouldUseDefaultTenantWhenNotSpecified() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of("companyId", "12345"))
                 .build();
 
@@ -75,15 +80,15 @@ class EnrichmentCacheKeyGeneratorTest {
     void generateKey_shouldProduceDifferentKeysForDifferentTenants() {
         // Given - Same parameters, different tenants
         EnrichmentRequest tenant1Request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of("companyId", "12345"))
-                .tenantId("tenant-abc")
+                .tenantId(TENANT_ABC)
                 .build();
 
         EnrichmentRequest tenant2Request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of("companyId", "12345"))
-                .tenantId("tenant-xyz")
+                .tenantId(TENANT_XYZ)
                 .build();
 
         // When
@@ -92,17 +97,17 @@ class EnrichmentCacheKeyGeneratorTest {
 
         // Then
         assertThat(key1).isNotEqualTo(key2);
-        assertThat(key1).contains("tenant-abc");
-        assertThat(key2).contains("tenant-xyz");
+        assertThat(key1).contains(TENANT_ABC.toString());
+        assertThat(key2).contains(TENANT_XYZ.toString());
     }
 
     @Test
     void generateKey_shouldProduceSameKeyForSameRequest() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of("companyId", "12345"))
-                .tenantId("tenant-abc")
+                .tenantId(TENANT_ABC)
                 .build();
 
         // When
@@ -117,15 +122,15 @@ class EnrichmentCacheKeyGeneratorTest {
     void generateKey_shouldProduceDifferentKeysForDifferentParameters() {
         // Given
         EnrichmentRequest request1 = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of("companyId", "12345"))
-                .tenantId("tenant-abc")
+                .tenantId(TENANT_ABC)
                 .build();
 
         EnrichmentRequest request2 = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of("companyId", "67890"))
-                .tenantId("tenant-abc")
+                .tenantId(TENANT_ABC)
                 .build();
 
         // When
@@ -140,15 +145,15 @@ class EnrichmentCacheKeyGeneratorTest {
     void generateKey_shouldProduceDifferentKeysForDifferentEnrichmentTypes() {
         // Given
         EnrichmentRequest request1 = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of("companyId", "12345"))
-                .tenantId("tenant-abc")
+                .tenantId(TENANT_ABC)
                 .build();
 
         EnrichmentRequest request2 = EnrichmentRequest.builder()
-                .enrichmentType("company-financials")
+                .type("company-financials")
                 .parameters(Map.of("companyId", "12345"))
-                .tenantId("tenant-abc")
+                .tenantId(TENANT_ABC)
                 .build();
 
         // When
@@ -165,9 +170,9 @@ class EnrichmentCacheKeyGeneratorTest {
     void generateKey_shouldProduceDifferentKeysForDifferentProviders() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of("companyId", "12345"))
-                .tenantId("tenant-abc")
+                .tenantId(TENANT_ABC)
                 .build();
 
         // When
@@ -184,14 +189,14 @@ class EnrichmentCacheKeyGeneratorTest {
     void generateKey_shouldHandleComplexParameters() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of(
                         "companyId", "12345",
                         "includeFinancials", "true",
                         "year", "2024",
                         "country", "US"
                 ))
-                .tenantId("tenant-abc")
+                .tenantId(TENANT_ABC)
                 .build();
 
         // When
@@ -199,28 +204,28 @@ class EnrichmentCacheKeyGeneratorTest {
 
         // Then
         assertThat(key).isNotNull();
-        assertThat(key).startsWith("enrichment:tenant-abc:TestProvider:company-profile:");
+        assertThat(key).startsWith("enrichment:" + TENANT_ABC + ":TestProvider:company-profile:");
     }
 
     @Test
     void generateKey_shouldProduceSameKeyForParametersInDifferentOrder() {
         // Given - Same parameters, different order
         EnrichmentRequest request1 = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of(
                         "companyId", "12345",
                         "year", "2024"
                 ))
-                .tenantId("tenant-abc")
+                .tenantId(TENANT_ABC)
                 .build();
 
         EnrichmentRequest request2 = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of(
                         "year", "2024",
                         "companyId", "12345"
                 ))
-                .tenantId("tenant-abc")
+                .tenantId(TENANT_ABC)
                 .build();
 
         // When
@@ -235,9 +240,9 @@ class EnrichmentCacheKeyGeneratorTest {
     void generateKey_shouldHandleEmptyParameters() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of())
-                .tenantId("tenant-abc")
+                .tenantId(TENANT_ABC)
                 .build();
 
         // When
@@ -245,16 +250,16 @@ class EnrichmentCacheKeyGeneratorTest {
 
         // Then
         assertThat(key).isNotNull();
-        assertThat(key).startsWith("enrichment:tenant-abc:TestProvider:company-profile:");
+        assertThat(key).startsWith("enrichment:" + TENANT_ABC + ":TestProvider:company-profile:");
     }
 
     @Test
     void generateKey_shouldSanitizeSpecialCharacters() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company:profile")
+                .type("company:profile")
                 .parameters(Map.of("companyId", "12345"))
-                .tenantId("tenant:abc")
+                .tenantId(TENANT_WITH_SPECIAL_CHARS)
                 .build();
 
         // When
@@ -269,10 +274,10 @@ class EnrichmentCacheKeyGeneratorTest {
     @Test
     void generateTenantPattern_shouldGenerateCorrectPattern() {
         // When
-        String pattern = keyGenerator.generateTenantPattern("tenant-abc");
+        String pattern = keyGenerator.generateTenantPattern(TENANT_ABC.toString());
 
         // Then
-        assertThat(pattern).isEqualTo("enrichment:tenant-abc:*");
+        assertThat(pattern).isEqualTo("enrichment:" + TENANT_ABC + ":*");
     }
 
     @Test

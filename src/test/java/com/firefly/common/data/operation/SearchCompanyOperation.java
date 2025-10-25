@@ -6,9 +6,9 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import reactor.core.publisher.Mono;
 
 /**
- * Example provider operation for searching companies.
+ * Example enricher operation for searching companies.
  */
-@ProviderCustomOperation(
+@EnricherOperation(
     operationId = "search-company",
     description = "Search for a company by name or tax ID to obtain provider internal ID",
     method = RequestMethod.GET,
@@ -16,7 +16,7 @@ import reactor.core.publisher.Mono;
     requiresAuth = true
 )
 public class SearchCompanyOperation
-        extends AbstractProviderOperation<CompanySearchRequest, CompanySearchResponse> {
+        extends AbstractEnricherOperation<CompanySearchRequest, CompanySearchResponse> {
 
     @Override
     protected Mono<CompanySearchResponse> doExecute(CompanySearchRequest request) {

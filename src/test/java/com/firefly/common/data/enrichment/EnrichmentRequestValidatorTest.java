@@ -37,7 +37,7 @@ class EnrichmentRequestValidatorTest {
     void validate_shouldPass_whenAllRequiredFieldsPresent() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .parameters(Map.of("companyId", "12345"))
                 .sourceDto(Map.of("name", "Acme"))
@@ -56,7 +56,7 @@ class EnrichmentRequestValidatorTest {
     void requireParam_shouldThrowException_whenParameterMissing() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .parameters(Map.of())
                 .build();
@@ -77,7 +77,7 @@ class EnrichmentRequestValidatorTest {
         params.put("companyId", null);
 
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .parameters(params)
                 .build();
@@ -95,7 +95,7 @@ class EnrichmentRequestValidatorTest {
     void requireParamMatching_shouldPass_whenParameterMatchesPattern() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("email-verification")
+                .type("email-verification")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .parameters(Map.of("email", "test@example.com"))
                 .build();
@@ -110,7 +110,7 @@ class EnrichmentRequestValidatorTest {
     void requireParamMatching_shouldThrowException_whenParameterDoesNotMatch() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("email-verification")
+                .type("email-verification")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .parameters(Map.of("email", "invalid-email"))
                 .build();
@@ -128,7 +128,7 @@ class EnrichmentRequestValidatorTest {
     void requireParamOfType_shouldPass_whenParameterIsCorrectType() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .parameters(Map.of("includeFinancials", true))
                 .build();
@@ -143,7 +143,7 @@ class EnrichmentRequestValidatorTest {
     void requireParamOfType_shouldThrowException_whenParameterIsWrongType() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .parameters(Map.of("includeFinancials", "true"))  // String instead of Boolean
                 .build();
@@ -161,7 +161,7 @@ class EnrichmentRequestValidatorTest {
     void requireSourceDto_shouldThrowException_whenSourceDtoIsNull() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .sourceDto(null)
                 .build();
@@ -179,7 +179,7 @@ class EnrichmentRequestValidatorTest {
     void requireStrategy_shouldPass_whenStrategyIsAllowed() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .build();
 
@@ -193,7 +193,7 @@ class EnrichmentRequestValidatorTest {
     void requireStrategy_shouldThrowException_whenStrategyNotAllowed() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.RAW)
                 .build();
 
@@ -210,7 +210,7 @@ class EnrichmentRequestValidatorTest {
     void requireTenantId_shouldThrowException_whenTenantIdIsNull() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .tenantId(null)
                 .build();
@@ -228,7 +228,7 @@ class EnrichmentRequestValidatorTest {
     void require_shouldAllowCustomValidation() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .parameters(Map.of("companyId", "12345"))
                 .build();
@@ -247,7 +247,7 @@ class EnrichmentRequestValidatorTest {
     void validate_shouldCollectMultipleErrors() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType(null)
+                .type(null)
                 .strategy(null)
                 .parameters(Map.of())
                 .sourceDto(null)
@@ -273,7 +273,7 @@ class EnrichmentRequestValidatorTest {
     void isValid_shouldReturnFalse_whenValidationFails() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .parameters(Map.of())
                 .build();
@@ -291,7 +291,7 @@ class EnrichmentRequestValidatorTest {
     void isValid_shouldReturnTrue_whenValidationPasses() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .parameters(Map.of("companyId", "12345"))
                 .build();

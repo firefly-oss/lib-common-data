@@ -16,6 +16,7 @@
 
 package com.firefly.common.data.examples.enricher;
 
+import com.firefly.common.data.enrichment.EnricherMetadata;
 import com.firefly.common.data.event.EnrichmentEventPublisher;
 import com.firefly.common.data.examples.dto.CompanyProfileDTO;
 import com.firefly.common.data.examples.dto.FinancialDataResponse;
@@ -23,18 +24,25 @@ import com.firefly.common.data.model.EnrichmentRequest;
 import com.firefly.common.data.observability.JobMetricsService;
 import com.firefly.common.data.observability.JobTracingService;
 import com.firefly.common.data.resiliency.ResiliencyDecoratorService;
-import com.firefly.common.data.service.TypedDataEnricher;
+import com.firefly.common.data.service.DataEnricher;
 import reactor.core.publisher.Mono;
 
 /**
- * Example enricher that demonstrates using TypedDataEnricher with a REST provider.
+ * Example enricher that demonstrates using DataEnricher with a REST provider.
  * This is a working example used in documentation and tests.
- * 
+ *
  * <p>In a real implementation, you would inject a RestClient from lib-common-client
  * to call the actual provider API. This example simulates the provider response.</p>
  */
-public class FinancialDataEnricher 
-        extends TypedDataEnricher<CompanyProfileDTO, FinancialDataResponse, CompanyProfileDTO> {
+@EnricherMetadata(
+    providerName = "Financial Data Provider",
+    type = "company-profile",
+    description = "Enriches company data with financial and corporate information",
+    version = "2.1.0",
+    tags = {"test", "example"}
+)
+public class FinancialDataEnricher
+        extends DataEnricher<CompanyProfileDTO, FinancialDataResponse, CompanyProfileDTO> {
     
     public FinancialDataEnricher(
             JobTracingService tracingService,
@@ -83,20 +91,8 @@ public class FinancialDataEnricher
                 .website(providerData.getWebsiteUrl())
                 .build();
     }
-    
-    @Override
-    public String getProviderName() {
-        return "Financial Data Provider";
-    }
-    
-    @Override
-    public String[] getSupportedEnrichmentTypes() {
-        return new String[]{"company-profile", "company-financials"};
-    }
-    
-    @Override
-    public String getEnricherDescription() {
-        return "Enriches company data with financial and corporate information";
-    }
+
+    // No need to implement getProviderName(), getSupportedEnrichmentTypes(), etc.
+    // They are read automatically from @EnricherMetadata annotation!
 }
 

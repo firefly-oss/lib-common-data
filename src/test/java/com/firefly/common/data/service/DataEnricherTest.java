@@ -42,10 +42,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 
 /**
- * Tests for TypedDataEnricher demonstrating the improved developer experience.
+ * Tests for DataEnricher demonstrating the improved developer experience.
  */
 @ExtendWith(MockitoExtension.class)
-class TypedDataEnricherTest {
+class DataEnricherTest {
 
     @Mock
     private JobTracingService tracingService;
@@ -86,7 +86,7 @@ class TypedDataEnricherTest {
                 .build();
 
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .sourceDto(source)
                 .parameters(Map.of("companyId", "12345"))
@@ -118,7 +118,7 @@ class TypedDataEnricherTest {
                 .build();
 
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.MERGE)
                 .sourceDto(source)
                 .parameters(Map.of("companyId", "12345"))
@@ -150,7 +150,7 @@ class TypedDataEnricherTest {
                 .build();
 
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.REPLACE)
                 .sourceDto(source)
                 .parameters(Map.of("companyId", "12345"))
@@ -181,7 +181,7 @@ class TypedDataEnricherTest {
                 .build();
 
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .sourceDto(source)
                 .parameters(Map.of("companyId", "12345"))
@@ -203,7 +203,7 @@ class TypedDataEnricherTest {
     void enrich_shouldHandleValidationErrors() {
         // Given - request without required parameter
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .parameters(Map.of())
                 .build();
@@ -245,8 +245,13 @@ class TypedDataEnricherTest {
         private Double annualRevenue;
     }
 
-    // Test implementation of TypedDataEnricher
-    static class TestTypedEnricher extends TypedDataEnricher<CompanyDTO, ProviderResponse, CompanyDTO> {
+    // Test implementation of DataEnricher
+    @com.firefly.common.data.enrichment.EnricherMetadata(
+        providerName = "Test Provider",
+        type = "company-profile",
+        description = "Test enricher for unit testing"
+    )
+    static class TestTypedEnricher extends DataEnricher<CompanyDTO, ProviderResponse, CompanyDTO> {
 
         public TestTypedEnricher(
                 JobTracingService tracingService,
@@ -284,16 +289,6 @@ class TypedDataEnricherTest {
                     .address(providerData.getRegisteredAddress())
                     .revenue(providerData.getAnnualRevenue())
                     .build();
-        }
-
-        @Override
-        public String getProviderName() {
-            return "Test Provider";
-        }
-
-        @Override
-        public String[] getSupportedEnrichmentTypes() {
-            return new String[]{"company-profile"};
         }
     }
 }

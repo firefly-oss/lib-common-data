@@ -35,43 +35,56 @@ import static org.mockito.Mockito.lenient;
 class DataEnricherRegistryTest {
 
     @Mock
-    private DataEnricher enricher1;
+    private DataEnricher<?, ?, ?> enricher1;
 
     @Mock
-    private DataEnricher enricher2;
+    private DataEnricher<?, ?, ?> enricher2;
 
     @Mock
-    private DataEnricher enricher3;
+    private DataEnricher<?, ?, ?> enricher3;
+
+    @Mock
+    private DataEnricher<?, ?, ?> enricher4;
+
+    @Mock
+    private DataEnricher<?, ?, ?> enricher5;
 
     private DataEnricherRegistry registry;
 
     @BeforeEach
     void setUp() {
-        // Setup enricher1 - Financial Data Provider
+        // Setup enricher1 - Financial Data Provider - Company Profile
         lenient().when(enricher1.getProviderName()).thenReturn("Financial Data Provider");
-        lenient().when(enricher1.getSupportedEnrichmentTypes()).thenReturn(new String[]{"company-profile", "company-financials"});
+        lenient().when(enricher1.getSupportedEnrichmentTypes()).thenReturn(List.of("company-profile"));
         lenient().when(enricher1.supportsEnrichmentType("company-profile")).thenReturn(true);
-        lenient().when(enricher1.supportsEnrichmentType("company-financials")).thenReturn(true);
 
-        // Setup enricher2 - Credit Bureau Provider
-        lenient().when(enricher2.getProviderName()).thenReturn("Credit Bureau Provider");
-        lenient().when(enricher2.getSupportedEnrichmentTypes()).thenReturn(new String[]{"credit-score", "credit-report"});
-        lenient().when(enricher2.supportsEnrichmentType("credit-score")).thenReturn(true);
-        lenient().when(enricher2.supportsEnrichmentType("credit-report")).thenReturn(true);
+        // Setup enricher2 - Financial Data Provider - Company Financials
+        lenient().when(enricher2.getProviderName()).thenReturn("Financial Data Provider");
+        lenient().when(enricher2.getSupportedEnrichmentTypes()).thenReturn(List.of("company-financials"));
+        lenient().when(enricher2.supportsEnrichmentType("company-financials")).thenReturn(true);
 
-        // Setup enricher3 - Business Data Provider
-        lenient().when(enricher3.getProviderName()).thenReturn("Business Data Provider");
-        lenient().when(enricher3.getSupportedEnrichmentTypes()).thenReturn(new String[]{"company-profile", "risk-assessment"});
-        lenient().when(enricher3.supportsEnrichmentType("company-profile")).thenReturn(true);
-        lenient().when(enricher3.supportsEnrichmentType("risk-assessment")).thenReturn(true);
+        // Setup enricher3 - Credit Bureau Provider - Credit Score
+        lenient().when(enricher3.getProviderName()).thenReturn("Credit Bureau Provider");
+        lenient().when(enricher3.getSupportedEnrichmentTypes()).thenReturn(List.of("credit-score"));
+        lenient().when(enricher3.supportsEnrichmentType("credit-score")).thenReturn(true);
 
-        registry = new DataEnricherRegistry(List.of(enricher1, enricher2, enricher3));
+        // Setup enricher4 - Credit Bureau Provider - Credit Report
+        lenient().when(enricher4.getProviderName()).thenReturn("Credit Bureau Provider");
+        lenient().when(enricher4.getSupportedEnrichmentTypes()).thenReturn(List.of("credit-report"));
+        lenient().when(enricher4.supportsEnrichmentType("credit-report")).thenReturn(true);
+
+        // Setup enricher5 - Business Data Provider - Risk Assessment
+        lenient().when(enricher5.getProviderName()).thenReturn("Business Data Provider");
+        lenient().when(enricher5.getSupportedEnrichmentTypes()).thenReturn(List.of("risk-assessment"));
+        lenient().when(enricher5.supportsEnrichmentType("risk-assessment")).thenReturn(true);
+
+        registry = new DataEnricherRegistry(List.of(enricher1, enricher2, enricher3, enricher4, enricher5));
     }
 
     @Test
     void getEnricherByProvider_shouldReturnEnricher_whenProviderExists() {
         // When
-        Optional<DataEnricher> result = registry.getEnricherByProvider("Financial Data Provider");
+        Optional<DataEnricher<?, ?, ?>> result = registry.getEnricherByProvider("Financial Data Provider");
 
         // Then
         assertThat(result).isPresent();
@@ -81,7 +94,7 @@ class DataEnricherRegistryTest {
     @Test
     void getEnricherByProvider_shouldReturnEmpty_whenProviderDoesNotExist() {
         // When
-        Optional<DataEnricher> result = registry.getEnricherByProvider("Unknown Provider");
+        Optional<DataEnricher<?, ?, ?>> result = registry.getEnricherByProvider("Unknown Provider");
 
         // Then
         assertThat(result).isEmpty();
@@ -90,7 +103,7 @@ class DataEnricherRegistryTest {
     @Test
     void getEnricherByProvider_shouldBeCaseInsensitive() {
         // When
-        Optional<DataEnricher> result = registry.getEnricherByProvider("financial data provider");
+        Optional<DataEnricher<?, ?, ?>> result = registry.getEnricherByProvider("financial data provider");
 
         // Then
         assertThat(result).isPresent();
@@ -100,7 +113,7 @@ class DataEnricherRegistryTest {
     @Test
     void getEnricherForType_shouldReturnFirstMatchingEnricher() {
         // When
-        Optional<DataEnricher> result = registry.getEnricherForType("company-profile");
+        Optional<DataEnricher<?, ?, ?>> result = registry.getEnricherForType("company-profile");
 
         // Then
         assertThat(result).isPresent();
@@ -111,7 +124,7 @@ class DataEnricherRegistryTest {
     @Test
     void getEnricherForType_shouldReturnEmpty_whenNoEnricherSupportsType() {
         // When
-        Optional<DataEnricher> result = registry.getEnricherForType("unsupported-type");
+        Optional<DataEnricher<?, ?, ?>> result = registry.getEnricherForType("unsupported-type");
 
         // Then
         assertThat(result).isEmpty();
@@ -120,11 +133,11 @@ class DataEnricherRegistryTest {
     @Test
     void getAllEnrichers_shouldReturnAllRegisteredEnrichers() {
         // When
-        List<DataEnricher> enrichers = registry.getAllEnrichers();
+        List<DataEnricher<?, ?, ?>> enrichers = registry.getAllEnrichers();
 
         // Then
-        assertThat(enrichers).hasSize(3);
-        assertThat(enrichers).containsExactly(enricher1, enricher2, enricher3);
+        assertThat(enrichers).hasSize(5);
+        assertThat(enrichers).containsExactly(enricher1, enricher2, enricher3, enricher4, enricher5);
     }
 
     @Test
@@ -173,22 +186,22 @@ class DataEnricherRegistryTest {
     @Test
     void getEnricherForType_shouldReturnDifferentEnrichers_forDifferentTypes() {
         // When
-        Optional<DataEnricher> companyProfileEnricher = registry.getEnricherForType("company-profile");
-        Optional<DataEnricher> creditScoreEnricher = registry.getEnricherForType("credit-score");
+        Optional<DataEnricher<?, ?, ?>> companyProfileEnricher = registry.getEnricherForType("company-profile");
+        Optional<DataEnricher<?, ?, ?>> creditScoreEnricher = registry.getEnricherForType("credit-score");
 
         // Then
         assertThat(companyProfileEnricher).isPresent();
         assertThat(creditScoreEnricher).isPresent();
         assertThat(companyProfileEnricher.get()).isEqualTo(enricher1);
-        assertThat(creditScoreEnricher.get()).isEqualTo(enricher2);
+        assertThat(creditScoreEnricher.get()).isEqualTo(enricher3);  // enricher3 is Credit Score enricher
     }
 
     @Test
     void getEnricherForType_shouldHandleMultipleEnrichersForSameType() {
-        // Given - both enricher1 and enricher3 support "company-profile"
+        // Given - only enricher1 supports "company-profile" now (one enricher = one type)
         
         // When
-        Optional<DataEnricher> result = registry.getEnricherForType("company-profile");
+        Optional<DataEnricher<?, ?, ?>> result = registry.getEnricherForType("company-profile");
 
         // Then - should return the first one registered
         assertThat(result).isPresent();
@@ -212,24 +225,24 @@ class DataEnricherRegistryTest {
 
     @Test
     void getEnricherByProvider_shouldReturnCorrectEnricher_forEachProvider() {
-        // When & Then
+        // When & Then - Returns first enricher for each provider
         assertThat(registry.getEnricherByProvider("Financial Data Provider"))
                 .isPresent()
-                .hasValue(enricher1);
+                .hasValue(enricher1);  // First Financial Data Provider enricher
 
         assertThat(registry.getEnricherByProvider("Credit Bureau Provider"))
                 .isPresent()
-                .hasValue(enricher2);
+                .hasValue(enricher3);  // First Credit Bureau Provider enricher
 
         assertThat(registry.getEnricherByProvider("Business Data Provider"))
                 .isPresent()
-                .hasValue(enricher3);
+                .hasValue(enricher5);  // First Business Data Provider enricher
     }
 
     @Test
     void getEnricherByProvider_shouldHandleNullProvider() {
         // When
-        Optional<DataEnricher> enricher = registry.getEnricherByProvider(null);
+        Optional<DataEnricher<?, ?, ?>> enricher = registry.getEnricherByProvider(null);
 
         // Then
         assertThat(enricher).isEmpty();
@@ -238,7 +251,7 @@ class DataEnricherRegistryTest {
     @Test
     void getEnricherByProvider_shouldHandleEmptyProvider() {
         // When
-        Optional<DataEnricher> enricher = registry.getEnricherByProvider("");
+        Optional<DataEnricher<?, ?, ?>> enricher = registry.getEnricherByProvider("");
 
         // Then
         assertThat(enricher).isEmpty();
@@ -247,7 +260,7 @@ class DataEnricherRegistryTest {
     @Test
     void getEnricherForType_shouldHandleNullType() {
         // When
-        Optional<DataEnricher> enricher = registry.getEnricherForType(null);
+        Optional<DataEnricher<?, ?, ?>> enricher = registry.getEnricherForType(null);
 
         // Then
         assertThat(enricher).isEmpty();
@@ -256,7 +269,7 @@ class DataEnricherRegistryTest {
     @Test
     void getEnricherForType_shouldHandleEmptyType() {
         // When
-        Optional<DataEnricher> enricher = registry.getEnricherForType("");
+        Optional<DataEnricher<?, ?, ?>> enricher = registry.getEnricherForType("");
 
         // Then
         assertThat(enricher).isEmpty();
@@ -294,7 +307,7 @@ class DataEnricherRegistryTest {
         int count = registry.getEnricherCount();
 
         // Then
-        assertThat(count).isEqualTo(3);
+        assertThat(count).isEqualTo(5);
     }
 
     @Test

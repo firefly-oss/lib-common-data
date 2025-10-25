@@ -52,10 +52,10 @@ class EnrichmentEventPublisherTest {
     void publishEnrichmentStarted_shouldPublishEvent() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .sourceDto(Map.of("companyId", "12345"))
-                .tenantId("tenant-001")
+                .tenantId(java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440001"))
                 .requestId("req-001")
                 .initiator("test-user")
                 .build();
@@ -73,7 +73,7 @@ class EnrichmentEventPublisherTest {
         assertThat(capturedEvent.getEventType()).isEqualTo("ENRICHMENT_STARTED");
         assertThat(capturedEvent.getEnrichmentType()).isEqualTo("company-profile");
         assertThat(capturedEvent.getProviderName()).isEqualTo("Test Provider");
-        assertThat(capturedEvent.getTenantId()).isEqualTo("tenant-001");
+        assertThat(capturedEvent.getTenantId()).isEqualTo("550e8400-e29b-41d4-a716-446655440001");
         assertThat(capturedEvent.getRequestId()).isEqualTo("req-001");
         assertThat(capturedEvent.getTimestamp()).isNotNull();
     }
@@ -82,8 +82,8 @@ class EnrichmentEventPublisherTest {
     void publishEnrichmentCompleted_shouldPublishEvent() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
-                .tenantId("tenant-001")
+                .type("company-profile")
+                .tenantId(java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440001"))
                 .requestId("req-001")
                 .build();
 
@@ -91,7 +91,7 @@ class EnrichmentEventPublisherTest {
                 .success(true)
                 .enrichedData(Map.of("companyId", "12345", "name", "Acme Corp"))
                 .providerName("Test Provider")
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .fieldsEnriched(2)
                 .cost(0.05)
                 .message("Enrichment successful")
@@ -122,8 +122,8 @@ class EnrichmentEventPublisherTest {
     void publishEnrichmentFailed_shouldPublishEvent() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
-                .tenantId("tenant-001")
+                .type("company-profile")
+                .tenantId(java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440001"))
                 .requestId("req-001")
                 .build();
 
@@ -152,8 +152,8 @@ class EnrichmentEventPublisherTest {
     void publishEnrichmentEvent_shouldIncludeAllMetadata() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
-                .tenantId("tenant-001")
+                .type("company-profile")
+                .tenantId(java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440001"))
                 .requestId("req-001")
                 .metadata(Map.of("source", "api", "priority", "high"))
                 .build();
@@ -161,7 +161,7 @@ class EnrichmentEventPublisherTest {
         EnrichmentResponse response = EnrichmentResponse.builder()
                 .success(true)
                 .providerName("Test Provider")
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .fieldsEnriched(5)
                 .cost(0.10)
                 .costCurrency("USD")

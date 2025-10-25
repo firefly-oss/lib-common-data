@@ -23,7 +23,7 @@ import com.firefly.common.data.model.EnrichmentStrategy;
 import com.firefly.common.data.observability.JobMetricsService;
 import com.firefly.common.data.observability.JobTracingService;
 import com.firefly.common.data.resiliency.ResiliencyDecoratorService;
-import com.firefly.common.data.service.TypedDataEnricher;
+import com.firefly.common.data.service.DataEnricher;
 import lombok.Builder;
 import lombok.Data;
 import org.junit.jupiter.api.BeforeEach;
@@ -92,7 +92,7 @@ class DataEnricherE2ETest {
                 .build();
 
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .sourceDto(sourceDto)
                 .parameters(Map.of("companyId", "12345"))
@@ -105,7 +105,7 @@ class DataEnricherE2ETest {
                     // Then - verify response structure
                     assertThat(response.isSuccess()).isTrue();
                     assertThat(response.getProviderName()).isEqualTo("Test Company Provider");
-                    assertThat(response.getEnrichmentType()).isEqualTo("company-profile");
+                    assertThat(response.getType()).isEqualTo("company-profile");
                     assertThat(response.getStrategy()).isEqualTo(EnrichmentStrategy.ENHANCE);
                     
                     // Verify enriched data
@@ -135,7 +135,7 @@ class DataEnricherE2ETest {
                 .build();
 
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.MERGE)
                 .sourceDto(sourceDto)
                 .parameters(Map.of("companyId", "12345"))
@@ -171,7 +171,7 @@ class DataEnricherE2ETest {
                 .build();
 
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.REPLACE)
                 .sourceDto(sourceDto)
                 .parameters(Map.of("companyId", "12345"))
@@ -201,7 +201,7 @@ class DataEnricherE2ETest {
     void shouldReturnRawProviderData_whenUsingRawStrategy() {
         // Given
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.RAW)
                 .parameters(Map.of("companyId", "12345"))
                 .requestId("req-004")
@@ -229,7 +229,7 @@ class DataEnricherE2ETest {
     void shouldReturnFailureResponse_whenValidationFails() {
         // Given - request without required parameter
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .sourceDto(CompanyDTO.builder().build())
                 .parameters(Map.of())  // Missing companyId
@@ -266,7 +266,12 @@ class DataEnricherE2ETest {
     /**
      * Test enricher implementation.
      */
-    static class TestCompanyEnricher extends TypedDataEnricher<CompanyDTO, Map<String, Object>, CompanyDTO> {
+    @com.firefly.common.data.enrichment.EnricherMetadata(
+        providerName = "Test Company Provider",
+        type = "company-profile",
+        description = "Test enricher for E2E testing"
+    )
+    static class TestCompanyEnricher extends DataEnricher<CompanyDTO, Map<String, Object>, CompanyDTO> {
 
         public TestCompanyEnricher(JobTracingService tracingService,
                                   JobMetricsService metricsService,
@@ -301,21 +306,6 @@ class DataEnricherE2ETest {
                     .revenue((Double) providerData.get("revenue"))
                     .industry((String) providerData.get("industry"))
                     .build();
-        }
-
-        @Override
-        public String getProviderName() {
-            return "Test Company Provider";
-        }
-
-        @Override
-        public String[] getSupportedEnrichmentTypes() {
-            return new String[]{"company-profile"};
-        }
-
-        @Override
-        public String getEnricherDescription() {
-            return "Test enricher for E2E testing";
         }
     }
 }

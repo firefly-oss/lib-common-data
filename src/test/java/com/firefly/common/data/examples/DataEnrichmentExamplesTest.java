@@ -85,7 +85,7 @@ class DataEnrichmentExamplesTest {
      * Example from: Quick Start - Step 3: Implement a Data Enricher
      */
     @Test
-    void example_TypedDataEnricher_BasicUsage() {
+    void example_DataEnricher_BasicUsage() {
         // Given
         CompanyProfileDTO source = CompanyProfileDTO.builder()
                 .companyId("12345")
@@ -93,7 +93,7 @@ class DataEnrichmentExamplesTest {
                 .build();
 
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .sourceDto(source)
                 .parameters(Map.of("companyId", "12345"))
@@ -105,7 +105,7 @@ class DataEnrichmentExamplesTest {
                     // Then
                     assertThat(response.isSuccess()).isTrue();
                     assertThat(response.getProviderName()).isEqualTo("Financial Data Provider");
-                    assertThat(response.getEnrichmentType()).isEqualTo("company-profile");
+                    assertThat(response.getType()).isEqualTo("company-profile");
                     
                     CompanyProfileDTO enriched = (CompanyProfileDTO) response.getEnrichedData();
                     assertThat(enriched.getCompanyId()).isEqualTo("12345");
@@ -154,11 +154,11 @@ class DataEnrichmentExamplesTest {
     void example_EnrichmentRequestValidator_FluentValidation() {
         // Given - valid request
         EnrichmentRequest validRequest = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .sourceDto(CompanyProfileDTO.builder().companyId("12345").build())
                 .parameters(Map.of("companyId", "12345"))
-                .tenantId("tenant-001")
+                .tenantId(java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440001"))
                 .build();
 
         // When & Then - validation passes
@@ -171,7 +171,7 @@ class DataEnrichmentExamplesTest {
 
         // Given - invalid request (missing parameter)
         EnrichmentRequest invalidRequest = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .parameters(Map.of())
                 .build();
 
@@ -248,7 +248,7 @@ class DataEnrichmentExamplesTest {
                 .build();
 
         EnrichmentRequest request = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE)
                 .sourceDto(sourceData)
                 .requestId("req-001")
@@ -302,7 +302,7 @@ class DataEnrichmentExamplesTest {
                 .build();
 
         EnrichmentRequest enhanceRequest = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.ENHANCE) // Preserve existing data
                 .sourceDto(source)
                 .parameters(Map.of("companyId", "12345"))
@@ -318,7 +318,7 @@ class DataEnrichmentExamplesTest {
 
         // Given - MERGE strategy (provider data is more authoritative)
         EnrichmentRequest mergeRequest = EnrichmentRequest.builder()
-                .enrichmentType("company-profile")
+                .type("company-profile")
                 .strategy(EnrichmentStrategy.MERGE)
                 .sourceDto(source)
                 .parameters(Map.of("companyId", "12345"))

@@ -299,7 +299,7 @@ public class CompleteEnrichmentFlowExample {
                 .build();
 
         // Apply RAW strategy - returns provider data as-is
-        // Note: In real usage, TypedDataEnricher skips mapToTarget() for RAW strategy
+        // Note: In real usage, DataEnricher skips mapToTarget() for RAW strategy
         FinancialDataResponse rawResult = EnrichmentStrategyApplier.apply(
                 EnrichmentStrategy.RAW,
                 sourceDto,
@@ -344,23 +344,23 @@ public class CompleteEnrichmentFlowExample {
      */
     @Test
     void demonstrateEnrichmentTypeUsage() {
-        // An enricher declares which types it supports
-        String[] supportedTypes = {"company-profile", "company-financials"};
+        // Each enricher supports exactly ONE type (One Enricher = One Type principle)
+        String enricherType = "company-profile";
 
         // USE CASE 1: Discovery endpoint filters by enrichment type
-        // When client calls GET /api/v1/enrichment/providers?enrichmentType=company-profile
+        // When client calls GET /api/v1/enrichment/providers?type=company-profile
         // The discovery controller filters enrichers that support "company-profile"
         String requestedType = "company-profile";
-        boolean canHandle = java.util.Arrays.asList(supportedTypes).contains(requestedType);
+        boolean canHandle = enricherType.equals(requestedType);
         assertThat(canHandle).isTrue();
 
-        // USE CASE 2: Optional programmatic lookup (if you need dynamic selection)
-        // DataEnricher enricher = registry.getEnricherForType("company-profile");
-        // Most applications don't need this - they use dedicated controllers
+        // USE CASE 2: Smart routing endpoint automatically selects best enricher
+        // POST /api/v1/enrichment/smart with type="company-profile" + tenantId
+        // The registry finds the highest-priority enricher for that type + tenant
 
         // If the request was for "credit-report", this enricher wouldn't support it
         String differentType = "credit-report";
-        boolean canHandleDifferent = java.util.Arrays.asList(supportedTypes).contains(differentType);
+        boolean canHandleDifferent = enricherType.equals(differentType);
         assertThat(canHandleDifferent).isFalse();
     }
 }

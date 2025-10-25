@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Tests for provider operations.
+ * Tests for enricher operations.
  */
 class ProviderOperationTest {
 
@@ -38,8 +38,8 @@ class ProviderOperationTest {
 
     @Test
     void testOperationMetadata() {
-        ProviderOperationMetadata metadata = operation.getMetadata();
-        
+        EnricherOperationMetadata metadata = operation.getMetadata();
+
         assertThat(metadata).isNotNull();
         assertThat(metadata.getOperationId()).isEqualTo("search-company");
         assertThat(metadata.getDescription()).isEqualTo("Search for a company by name or tax ID to obtain provider internal ID");
@@ -57,8 +57,8 @@ class ProviderOperationTest {
 
     @Test
     void testOperationMetadataPath() {
-        ProviderOperationMetadata metadata = operation.getMetadata();
-        
+        EnricherOperationMetadata metadata = operation.getMetadata();
+
         assertThat(metadata.getPath()).isEqualTo("/search-company");
         assertThat(metadata.getFullPath("/api/v1/enrichment/credit-bureau"))
             .isEqualTo("/api/v1/enrichment/credit-bureau/search-company");
@@ -66,15 +66,15 @@ class ProviderOperationTest {
 
     @Test
     void testOperationMetadataHttpMethod() {
-        ProviderOperationMetadata metadata = operation.getMetadata();
-        
+        EnricherOperationMetadata metadata = operation.getMetadata();
+
         assertThat(metadata.getHttpMethod()).isEqualTo("GET");
     }
 
     @Test
     void testOperationMetadataTypeNames() {
-        ProviderOperationMetadata metadata = operation.getMetadata();
-        
+        EnricherOperationMetadata metadata = operation.getMetadata();
+
         assertThat(metadata.getRequestTypeName()).isEqualTo("CompanySearchRequest");
         assertThat(metadata.getResponseTypeName()).isEqualTo("CompanySearchResponse");
     }
@@ -164,16 +164,16 @@ class ProviderOperationTest {
 
     @Test
     void testJsonSchemaGeneration() {
-        ProviderOperationMetadata metadata = operation.getMetadata();
-        
+        EnricherOperationMetadata metadata = operation.getMetadata();
+
         assertThat(metadata.getRequestSchema()).isNotNull();
         assertThat(metadata.getResponseSchema()).isNotNull();
     }
 
     @Test
     void testExampleGeneration() {
-        ProviderOperationMetadata metadata = operation.getMetadata();
-        
+        EnricherOperationMetadata metadata = operation.getMetadata();
+
         // Examples should be generated from @Schema annotations
         assertThat(metadata.getRequestExample()).isNotNull();
         assertThat(metadata.getResponseExample()).isNotNull();
