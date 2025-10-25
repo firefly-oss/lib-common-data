@@ -6,17 +6,17 @@ import lombok.Value;
 import org.springframework.web.bind.annotation.RequestMethod;
 
 /**
- * Metadata for a provider-specific operation.
+ * Metadata for an enricher-specific operation.
  *
- * <p>This class contains all the information needed to expose a provider operation as a REST endpoint,
+ * <p>This class contains all the information needed to expose an enricher operation as a REST endpoint,
  * including JSON schemas for request/response validation and documentation.</p>
  *
- * <p>Metadata is automatically extracted from the {@link Operation} annotation and the
+ * <p>Metadata is automatically extracted from the {@link EnricherOperation} annotation and the
  * operation's request/response DTO classes.</p>
  *
  * <p><b>Example Metadata:</b></p>
  * <pre>{@code
- * ProviderOperationMetadata.builder()
+ * EnricherOperationMetadata.builder()
  *     .operationId("search-company")
  *     .description("Search for a company by name or tax ID")
  *     .method(RequestMethod.GET)
@@ -33,15 +33,15 @@ import org.springframework.web.bind.annotation.RequestMethod;
  *     .build();
  * }</pre>
  *
- * @see Operation
- * @see ProviderOperation
+ * @see EnricherOperation
+ * @see EnricherOperationInterface
  */
 @Value
 @Builder
-public class ProviderOperationMetadata {
+public class EnricherOperationMetadata {
 
     /**
-     * Unique identifier for this operation within the provider.
+     * Unique identifier for this operation within the enricher.
      *
      * <p>This is used as part of the URL path. Should be kebab-case.</p>
      *

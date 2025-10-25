@@ -26,29 +26,29 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Abstract base class for provider-specific operations with enterprise-grade features.
+ * Abstract base class for enricher-specific operations with enterprise-grade features.
  *
- * <p>This class provides common functionality for all provider operations including:</p>
+ * <p>This class provides common functionality for all enricher operations including:</p>
  * <ul>
  *   <li><b>Observability:</b> Automatic tracing, metrics, and event publishing</li>
  *   <li><b>Resiliency:</b> Circuit breaker, retry, rate limiting, and timeout</li>
  *   <li><b>Caching:</b> Automatic caching with tenant isolation and TTL management</li>
  *   <li><b>Validation:</b> Jakarta Validation support with automatic validation</li>
- *   <li><b>Metadata:</b> Automatic extraction from {@link ProviderCustomOperation} annotation</li>
+ *   <li><b>Metadata:</b> Automatic extraction from {@link EnricherOperation} annotation</li>
  *   <li><b>JSON Schema:</b> Automatic schema generation for request/response DTOs</li>
  *   <li><b>Error Handling:</b> Comprehensive error handling with structured responses</li>
  * </ul>
  *
  * <p><b>Example Implementation:</b></p>
  * <pre>{@code
- * @Operation(
+ * @EnricherOperation(
  *     operationId = "search-company",
  *     description = "Search for a company by name or tax ID to obtain provider internal ID",
  *     method = RequestMethod.GET,
  *     tags = {"lookup", "search"}
  * )
- * public class SearchCompanyOperation 
- *         extends AbstractProviderOperation<CompanySearchRequest, CompanySearchResponse> {
+ * public class SearchCompanyOperation
+ *         extends AbstractEnricherOperation<CompanySearchRequest, CompanySearchResponse> {
  *
  *     private final RestClient bureauClient;
  *
@@ -81,12 +81,12 @@ import java.util.stream.Collectors;
  *
  * @param <TRequest> the request DTO type
  * @param <TResponse> the response DTO type
- * @see ProviderOperation
- * @see Operation
+ * @see EnricherOperationInterface
+ * @see EnricherOperation
  */
 @Slf4j
-public abstract class AbstractProviderOperation<TRequest, TResponse>
-        implements ProviderOperation<TRequest, TResponse> {
+public abstract class AbstractEnricherOperation<TRequest, TResponse>
+        implements EnricherOperationInterface<TRequest, TResponse> {
 
     // Core dependencies
     @Autowired(required = false)
@@ -121,7 +121,7 @@ public abstract class AbstractProviderOperation<TRequest, TResponse>
     private DataEnrichmentProperties properties;
 
     // Metadata
-    private ProviderOperationMetadata metadata;
+    private EnricherOperationMetadata metadata;
     private Class<TRequest> requestType;
     private Class<TResponse> responseType;
     private String providerName;
@@ -209,7 +209,7 @@ public abstract class AbstractProviderOperation<TRequest, TResponse>
     /**
      * Initializes the operation metadata after bean construction.
      *
-     * <p>This method extracts metadata from the {@link Operation} annotation
+     * <p>This method extracts metadata from the {@link EnricherOperation} annotation
      * and generates JSON schemas for request/response DTOs.</p>
      *
      * <p>This method is public to allow manual initialization in tests.</p>
@@ -250,17 +250,17 @@ public abstract class AbstractProviderOperation<TRequest, TResponse>
      */
     private void initializeMetadataFromAnnotation() {
 
-        // Extract metadata from @ProviderCustomOperation annotation
-        ProviderCustomOperation annotation = getClass().getAnnotation(ProviderCustomOperation.class);
+        // Extract metadata from @EnricherOperation annotation
+        EnricherOperation annotation = getClass().getAnnotation(EnricherOperation.class);
         if (annotation == null) {
             throw new IllegalStateException(
                 "Operation class " + getClass().getSimpleName() +
-                " must be annotated with @ProviderCustomOperation");
+                " must be annotated with @EnricherOperation");
         }
 
         // Determine path (use operationId if path is empty)
-        String path = annotation.path().isEmpty() 
-            ? "/" + annotation.operationId() 
+        String path = annotation.path().isEmpty()
+            ? "/" + annotation.operationId()
             : annotation.path();
 
         // Generate JSON schemas
@@ -276,16 +276,16 @@ public abstract class AbstractProviderOperation<TRequest, TResponse>
                 requestExample = schemaGenerator.generateExample(requestType);
                 responseExample = schemaGenerator.generateExample(responseType);
             } catch (Exception e) {
-                log.warn("Failed to generate JSON schemas for operation {}: {}", 
+                log.warn("Failed to generate JSON schemas for operation {}: {}",
                     annotation.operationId(), e.getMessage());
             }
         } else {
-            log.warn("JsonSchemaGenerator not available - schemas will not be generated for operation {}", 
+            log.warn("JsonSchemaGenerator not available - schemas will not be generated for operation {}",
                 annotation.operationId());
         }
 
         // Build metadata
-        this.metadata = ProviderOperationMetadata.builder()
+        this.metadata = EnricherOperationMetadata.builder()
             .operationId(annotation.operationId())
             .description(annotation.description())
             .method(annotation.method())
@@ -301,7 +301,7 @@ public abstract class AbstractProviderOperation<TRequest, TResponse>
             .responseExample(responseExample)
             .build();
 
-        log.info("Initialized provider operation: {} ({})", 
+        log.info("Initialized enricher operation: {} ({})",
             annotation.operationId(), getClass().getSimpleName());
     }
 
@@ -479,6 +479,7 @@ public abstract class AbstractProviderOperation<TRequest, TResponse>
         validateRequest(request);
     }
 
+
     /**
      * Validates the request DTO with custom logic.
      *
@@ -570,7 +571,7 @@ public abstract class AbstractProviderOperation<TRequest, TResponse>
     }
 
     @Override
-    public final ProviderOperationMetadata getMetadata() {
+    public final EnricherOperationMetadata getMetadata() {
         return metadata;
     }
 

@@ -26,10 +26,10 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks a class as a provider-specific custom operation.
+ * Marks a class as an enricher-specific operation.
  *
  * <p>This annotation is used to define auxiliary operations that a data enricher
- * provides beyond the standard enrichment flow. These are provider-specific operations
+ * provides beyond the standard enrichment flow. These are enricher-specific operations
  * that clients may need to call before or alongside enrichment requests.</p>
  *
  * <p><b>Common Use Cases:</b></p>
@@ -42,14 +42,14 @@ import java.lang.annotation.Target;
  *
  * <p><b>Usage Example:</b></p>
  * <pre>{@code
- * @ProviderCustomOperation(
+ * @EnricherOperation(
  *     operationId = "search-company",
  *     description = "Search for a company by name or tax ID to obtain provider internal ID",
  *     method = RequestMethod.GET,
  *     tags = {"lookup", "search"}
  * )
  * public class SearchCompanyOperation 
- *         extends AbstractProviderOperation<CompanySearchRequest, CompanySearchResponse> {
+ *         extends AbstractEnricherOperation<CompanySearchRequest, CompanySearchResponse> {
  *     
  *     private final RestClient providerClient;
  *     
@@ -74,22 +74,22 @@ import java.lang.annotation.Target;
  * <ul>
  *   <li>Automatic Spring bean registration</li>
  *   <li>Automatic JSON Schema generation for request/response DTOs</li>
- *   <li>Automatic REST endpoint exposure via {@link com.firefly.common.data.controller.AbstractDataEnricherController}</li>
+ *   <li>Automatic REST endpoint exposure via {@link com.firefly.common.data.controller.GlobalOperationsController}</li>
  *   <li>Type-safe request/response handling</li>
  *   <li>Built-in validation and error handling</li>
  * </ul>
  *
- * @see AbstractProviderOperation
- * @see ProviderOperation
+ * @see AbstractEnricherOperation
+ * @see EnricherOperationInterface
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 @Component
-public @interface ProviderCustomOperation {
+public @interface EnricherOperation {
 
     /**
-     * Unique identifier for this operation within the provider.
+     * Unique identifier for this operation within the enricher.
      *
      * <p>This will be used as part of the URL path. Should be kebab-case.</p>
      *

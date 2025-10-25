@@ -3,9 +3,9 @@ package com.firefly.common.data.operation;
 import reactor.core.publisher.Mono;
 
 /**
- * Base interface for provider-specific operations.
+ * Base interface for enricher-specific operations.
  *
- * <p>Provider operations are auxiliary operations that enrichers expose to support
+ * <p>Enricher operations are auxiliary operations that enrichers expose to support
  * their enrichment workflow. Common use cases include:</p>
  * <ul>
  *   <li><b>ID Lookup:</b> Search for internal provider IDs before enrichment</li>
@@ -25,15 +25,14 @@ import reactor.core.publisher.Mono;
  *
  * <p><b>Example - Company Search Operation:</b></p>
  * <pre>{@code
- * @Component
- * @Operation(
+ * @EnricherOperation(
  *     operationId = "search-company",
  *     description = "Search for a company by name or tax ID to obtain provider internal ID",
  *     method = RequestMethod.GET,
  *     tags = {"lookup", "search"}
  * )
  * public class SearchCompanyOperation 
- *         extends AbstractProviderOperation<CompanySearchRequest, CompanySearchResponse> {
+ *         extends AbstractEnricherOperation<CompanySearchRequest, CompanySearchResponse> {
  *
  *     private final RestClient bureauClient;
  *
@@ -107,7 +106,7 @@ import reactor.core.publisher.Mono;
  * <p><b>Registering Operations with Enrichers:</b></p>
  * <pre>{@code
  * @Service
- * public class CreditBureauEnricher extends TypedDataEnricher<...> {
+ * public class CreditBureauEnricher extends DataEnricher<...> {
  *
  *     private final SearchCompanyOperation searchCompanyOperation;
  *     private final ValidateTaxIdOperation validateTaxIdOperation;
@@ -122,7 +121,7 @@ import reactor.core.publisher.Mono;
  *     }
  *
  *     @Override
- *     public List<ProviderOperation<?, ?>> getOperations() {
+ *     public List<EnricherOperationInterface<?, ?>> getOperations() {
  *         return List.of(
  *             searchCompanyOperation,
  *             validateTaxIdOperation
@@ -133,20 +132,20 @@ import reactor.core.publisher.Mono;
  *
  * @param <TRequest> the request DTO type
  * @param <TResponse> the response DTO type
- * @see AbstractProviderOperation
- * @see Operation
- * @see ProviderOperationMetadata
+ * @see AbstractEnricherOperation
+ * @see EnricherOperation
+ * @see EnricherOperationMetadata
  */
-public interface ProviderOperation<TRequest, TResponse> {
+public interface EnricherOperationInterface<TRequest, TResponse> {
 
     /**
-     * Executes the provider operation.
+     * Executes the enricher operation.
      *
      * <p>This method handles the complete operation lifecycle including:</p>
      * <ul>
      *   <li>Request validation</li>
      *   <li>Execution of the operation logic</li>
- *   <li>Error handling</li>
+     *   <li>Error handling</li>
      *   <li>Response transformation</li>
      * </ul>
      *
@@ -170,7 +169,7 @@ public interface ProviderOperation<TRequest, TResponse> {
      *
      * @return the operation metadata
      */
-    ProviderOperationMetadata getMetadata();
+    EnricherOperationMetadata getMetadata();
 
     /**
      * Gets the request type class.
