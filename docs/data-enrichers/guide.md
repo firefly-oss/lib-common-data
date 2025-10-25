@@ -8,30 +8,97 @@
 
 ## Table of Contents
 
+### Getting Started
 1. [What Are Data Enrichers?](#what-are-data-enrichers)
 2. [Why Do They Exist?](#why-do-they-exist)
 3. [Architecture Overview](#architecture-overview)
 4. [Quick Start](#quick-start)
 5. [Do I Need to Create Controllers?](#do-i-need-to-create-controllers)
+
+### Core Concepts
 6. [Enrichment Strategies](#enrichment-strategies)
+   - ENHANCE, MERGE, REPLACE, RAW
 7. [Batch Enrichment](#batch-enrichment)
-8. [Multi-Module Project Structure](#multi-module-project-structure)
-9. [Building Your First Enricher](#building-your-first-enricher)
-10. [Multi-Tenancy](#multi-tenancy)
-11. [Priority-Based Selection](#priority-based-selection)
+   - Parallel processing, error handling
+8. [Multi-Tenancy](#multi-tenancy)
+   - One enricher per product per tenant
+9. [Priority-Based Selection](#priority-based-selection)
+   - Primary/fallback providers
+
+### Implementation
+10. [Multi-Module Project Structure](#multi-module-project-structure)
+    - Domain, Client, Enricher, App modules
+11. [Building Your First Enricher](#building-your-first-enricher)
+    - Step-by-step guide
 12. [Custom Operations](#custom-operations)
+    - Search, validation, lookup operations
+
+### Production Readiness
 13. [Testing](#testing)
+    - Unit and integration testing
 14. [Configuration](#configuration)
+    - Complete configuration reference
 15. [Best Practices](#best-practices)
+    - Production-ready patterns
 
 ---
 
 ## What Are Data Enrichers?
 
-**Data Enrichers** are specialized microservices that integrate with third-party data providers. They serve two main purposes:
+### The Concept
 
-1. **Data Enrichment** - Enhance your data with information from external providers
-2. **Provider Abstraction** - Abstract provider implementations behind a unified interface
+**Data Enrichers** are specialized microservices that integrate with third-party data providers. They implement two fundamental design patterns:
+
+1. **Decorator Pattern** - Enhance your data with information from external providers
+2. **Adapter Pattern** - Abstract provider implementations behind a unified interface
+
+### Design Patterns Explained
+
+#### 1. Decorator Pattern (Data Enrichment)
+
+The **Decorator Pattern** allows you to add new functionality to an object dynamically without altering its structure. In our case:
+
+- **Original Object**: Your company data (name, tax ID, etc.)
+- **Decorator**: The enricher that adds credit score, rating, risk level
+- **Result**: Enhanced object with both original and new data
+
+**Why this pattern?**
+- ✅ **Non-invasive**: Doesn't modify your original data structure
+- ✅ **Flexible**: Can apply multiple enrichments in sequence
+- ✅ **Reversible**: Can choose which enrichments to apply via strategies (ENHANCE, MERGE, REPLACE, RAW)
+
+```
+Original Data → [Enricher Decorator] → Enhanced Data
+   {name}    →   [adds credit info]  →  {name + credit}
+```
+
+#### 2. Adapter Pattern (Provider Abstraction)
+
+The **Adapter Pattern** converts the interface of a class into another interface that clients expect. In our case:
+
+- **Adaptee**: Provider-specific API (Equifax, Experian, each with different interfaces)
+- **Adapter**: The enricher that translates to a common interface
+- **Client**: Your application that calls a unified API
+
+**Why this pattern?**
+- ✅ **Decoupling**: Client doesn't know which provider is used
+- ✅ **Interchangeability**: Switch providers without changing client code
+- ✅ **Consistency**: Same interface regardless of underlying provider
+
+```
+Client Request → [Enricher Adapter] → Provider API
+  {taxId}     →  [translates to]    → Equifax API
+  {taxId}     →  [translates to]    → Experian API
+                 (same interface,      (different APIs,
+                  different impl)       same result format)
+```
+
+### Combined Power
+
+Data Enrichers combine both patterns to provide:
+
+1. **Data Enrichment** (Decorator) - Enhance your data with information from external providers
+2. **Provider Abstraction** (Adapter) - Abstract provider implementations behind a unified interface
 
 ### Real-World Example: Credit Bureau Microservice
 
@@ -119,7 +186,100 @@ POST /api/v1/enrichment/smart
 
 ## Why Do They Exist?
 
-### The Problem
+### The Problem: Integration Complexity Explosion
+
+Imagine you're building a fintech platform that needs credit reports. Let's see how complexity grows:
+
+#### Scenario 1: Single Provider, Single Country (Simple)
+
+```
+Your App → Equifax Spain API
+```
+
+**Complexity**: Low
+- 1 provider
+- 1 API to learn
+- 1 authentication method
+- 1 data model to map
+
+**Code**:
+```java
+// Simple, direct integration
+EquifaxClient client = new EquifaxClient();
+EquifaxResponse response = client.getCreditReport(taxId);
+```
+
+#### Scenario 2: Multiple Countries (Complexity Starts)
+
+```
+Your App → Equifax Spain API (for Spain)
+        → Experian USA API (for USA)
+        → Experian UK API (for UK)
+```
+
+**Complexity**: Medium
+- 3 providers (different APIs even if same brand!)
+- 3 authentication methods
+- 3 data models to map
+- **Problem**: Client code needs to know which provider to call for which country
+
+**Code**:
+```java
+// Client needs to know geography
+if (country.equals("ES")) {
+    EquifaxSpainClient client = new EquifaxSpainClient();
+    return client.getCreditReport(taxId);
+} else if (country.equals("US")) {
+    ExperianUsaClient client = new ExperianUsaClient();
+    return client.getCreditReport(ein);  // Different parameter!
+} else if (country.equals("UK")) {
+    ExperianUkClient client = new ExperianUkClient();
+    return client.getCreditReport(companyNumber);  // Different again!
+}
+```
+
+#### Scenario 3: Multiple Products per Provider (Complexity Explosion!)
+
+```
+Your App → Equifax Spain:
+              - Credit Report API
+              - Credit Monitoring API
+        → Experian USA:
+              - Business Credit API
+              - Consumer Credit API
+              - Credit Score Plus API
+        → Experian UK:
+              - Credit Report API (different from USA!)
+              - Risk Assessment API
+```
+
+**Complexity**: **VERY HIGH**
+- 7 different APIs
+- 7 authentication methods
+- 7 data models
+- **Problem**: Client code becomes a nightmare of if/else statements
+- **Problem**: Adding a new provider requires changing client code everywhere
+
+**Code**:
+```java
+// This is unmaintainable!
+if (country.equals("ES") && product.equals("credit-report")) {
+    EquifaxSpainCreditClient client = new EquifaxSpainCreditClient();
+    return client.getCreditReport(taxId);
+} else if (country.equals("ES") && product.equals("monitoring")) {
+    EquifaxSpainMonitoringClient client = new EquifaxSpainMonitoringClient();
+    return client.getMonitoring(taxId);
+} else if (country.equals("US") && product.equals("business-credit")) {
+    ExperianUsaBusinessClient client = new ExperianUsaBusinessClient();
+    return client.getBusinessReport(ein);
+} else if (country.equals("US") && product.equals("consumer-credit")) {
+    ExperianUsaConsumerClient client = new ExperianUsaConsumerClient();
+    return client.getConsumerReport(ssn);
+}
+// ... 3 more conditions!
+```
+
+### The Real-World Challenges
 
 When integrating with multiple credit bureaus, you face these challenges:
 
@@ -145,7 +305,53 @@ When integrating with multiple credit bureaus, you face these challenges:
    - Need caching for performance
    - Need health checks and monitoring
 
-### The Solution
+### The Solution: Strategy Pattern + Registry Pattern
+
+Data Enrichers solve this using two additional design patterns:
+
+#### 3. Strategy Pattern (Provider Selection)
+
+The **Strategy Pattern** defines a family of algorithms (enrichers), encapsulates each one, and makes them interchangeable.
+
+**Why this pattern?**
+- ✅ **Runtime Selection**: Choose provider at runtime based on type/tenant/priority
+- ✅ **Open/Closed Principle**: Add new providers without modifying existing code
+- ✅ **Testability**: Each strategy is independently testable
+
+```
+Client Request (type="credit-report", tenant="tenant-a")
+     ↓
+[DataEnricherRegistry] → Queries registered enrichers
+     ↓
+Finds matching strategies:
+  [Strategy A: Equifax Enricher]  ← priority=100, matches type+tenant
+  [Strategy B: Experian Enricher] ← priority=50, matches type+tenant
+     ↓
+Selects highest priority → [Equifax Enricher]
+     ↓
+Executes enrichment
+```
+
+#### 4. Registry Pattern (Provider Discovery)
+
+The **Registry Pattern** provides a central place to register and look up enrichers.
+
+**Why this pattern?**
+- ✅ **Decoupling**: Client doesn't know what enrichers exist
+- ✅ **Dynamic Discovery**: Enrichers auto-register at startup via Spring
+- ✅ **Query Interface**: Find enrichers by type, tenant, priority
+
+```
+Startup Phase:
+  [Equifax Enricher] → @Component → Spring → [DataEnricherRegistry]
+  [Experian Enricher] → @Component → Spring → [DataEnricherRegistry]
+
+Runtime Phase:
+  Client → query(type="credit-report", tenant="tenant-a") → [Registry]
+       ← returns [Equifax Enricher] (highest priority match)
+```
+
+### How lib-common-data Implements This
 
 **lib-common-data** provides a framework where you:
 
@@ -177,37 +383,203 @@ When integrating with multiple credit bureaus, you face these challenges:
 
 ## Architecture Overview
 
+### Design Patterns in Action
+
+The architecture implements **four design patterns** working together:
+
+1. **Decorator Pattern** - Enrichers add data to source objects
+2. **Adapter Pattern** - Enrichers adapt provider APIs to common interface
+3. **Strategy Pattern** - Multiple enrichers for same type, selected at runtime
+4. **Registry Pattern** - Central registry for discovering enrichers
+
 ### High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  Your Microservice: core-data-credit-bureaus                    │
-│                                                                 │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │  Your Enrichers (Just create these!)                       │ │
-│  │                                                            │ │
-│  │  @EnricherMetadata(providerName="Equifax Spain",           │ │
-│  │                    tenantId="spain-tenant-id",             │ │
-│  │                    type="credit-report")                   │ │
-│  │  class EquifaxSpainCreditReportEnricher { ... }            │ │
-│  │                                                            │ │
-│  │  @EnricherMetadata(providerName="Experian USA",            │ │
-│  │                    tenantId="usa-tenant-id",               │ │
-│  │                    type="credit-report")                   │ │
-│  │  class ExperianUsaCreditReportEnricher { ... }             │ │
-│  └────────────────────────────────────────────────────────────┘ │
-│                            ↓                                    │
-│                   Auto-Registration                             │
-│                            ↓                                    │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │  Global Endpoints (Provided by lib-common-data)            │ │
-│  │                                                            │ │
-│  │  POST /api/v1/enrichment/smart                             │ │
-│  │  POST /api/v1/enrichment/smart/batch                       │ │
-│  │  GET  /api/v1/enrichment/providers                         │ │
-│  │  GET  /api/v1/enrichment/health                            │ │
-│  └────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          YOUR MICROSERVICE                              │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  @EnricherMetadata(type="credit-report", tenant="tenant-a")     │    │
+│  │  class EquifaxSpainEnricher extends DataEnricher {              │    │
+│  │      // ADAPTER: Adapts Equifax API to common interface         │    │
+│  │      // DECORATOR: Adds credit data to source data              │    │
+│  │      // STRATEGY: One strategy for Equifax                      │    │
+│  │  }                                                              │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  @EnricherMetadata(type="credit-report", tenant="tenant-b")     │    │
+│  │  class ExperianUsaEnricher extends DataEnricher {               │    │
+│  │      // ADAPTER: Adapts Experian API to common interface        │    │
+│  │      // DECORATOR: Adds credit data to source data              │    │
+│  │      // STRATEGY: Another strategy for Experian                 │    │
+│  │  }                                                              │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                         │
+│  Spring @Component → Auto-registers enrichers at startup                │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         LIB-COMMON-DATA                                 │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  DataEnricherRegistry (REGISTRY PATTERN)                        │    │
+│  │                                                                 │    │
+│  │  Stores: Map<String, List<DataEnricher>>                        │    │
+│  │  - register(enricher): Auto-called by Spring                    │    │
+│  │  - findEnrichers(type, tenant): Query enrichers                 │    │
+│  │  - selectBest(): Select by priority                             │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                    ↑                                    │
+│                                    │ queries                            │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  SmartEnrichmentController (Auto-Created)                       │    │
+│  │  POST /api/v1/enrichment/smart                                  │    │
+│  │  POST /api/v1/enrichment/smart/batch                            │    │
+│  │                                                                 │    │
+│  │  1. Receives request                                            │    │
+│  │  2. Queries registry                                            │    │
+│  │  3. Selects enricher (STRATEGY)                                 │    │
+│  │  4. Executes enrichment                                         │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  Other Global Controllers (Auto-Created)                        │    │
+│  │  GET  /api/v1/enrichment/providers (discovery)                  │    │
+│  │  GET  /api/v1/enrichment/health (health checks)                 │    │
+│  │  GET  /api/v1/enrichment/operations (operations catalog)        │    │
+│  │  POST /api/v1/enrichment/operations/execute (run operations)    │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Request Flow: How It All Works
+
+Let's trace a request to understand how the patterns work together:
+
+```
+1. CLIENT REQUEST
+   POST /api/v1/enrichment/smart
+   {
+     "type": "credit-report",
+     "tenantId": "tenant-a",
+     "sourceData": { "taxId": "B12345678" },
+     "strategy": "ENHANCE"
+   }
+
+2. SMART ENRICHMENT CONTROLLER
+   Receives request
+   ↓
+
+3. REGISTRY PATTERN: Query for enrichers
+   registry.findEnrichers("credit-report", "tenant-a")
+   ↓
+   Returns: [
+     EquifaxSpainEnricher(priority=100),
+     ExperianUsaEnricher(priority=50)
+   ]
+   ↓
+
+4. STRATEGY PATTERN: Select best enricher
+   Selects highest priority → EquifaxSpainEnricher
+   ↓
+
+5. EXECUTE ENRICHMENT (with cross-cutting concerns)
+   ┌─────────────────────────────────────────┐
+   │ Circuit Breaker Check                   │
+   │   ↓                                     │
+   │ Cache Check (tenant-isolated)           │
+   │   ↓ (cache miss)                        │
+   │ Start Tracing Span                      │
+   │   ↓                                     │
+   │ ADAPTER PATTERN: Call provider          │
+   │   fetchProviderData()                   │
+   │     → Calls Equifax API                 │
+   │     → Returns Equifax-specific format   │
+   │   ↓                                     │
+   │   mapToTarget()                         │
+   │     → Converts to common format         │
+   │   ↓                                     │
+   │ DECORATOR PATTERN: Apply strategy       │
+   │   strategy.apply(source, provider)      │
+   │     → ENHANCE: Merge source + provider  │
+   │   ↓                                     │
+   │ Cache Store                             │
+   │   ↓                                     │
+   │ Publish Event                           │
+   │   ↓                                     │
+   │ End Tracing Span                        │
+   │   ↓                                     │
+   │ Update Metrics                          │
+   └─────────────────────────────────────────┘
+   ↓
+
+6. RETURN ENRICHED DATA
+   {
+     "taxId": "B12345678",        ← from source (original)
+     "creditScore": 750,           ← from provider (decorated)
+     "rating": "AAA",              ← from provider (decorated)
+     "providerName": "Equifax Spain"
+   }
+```
+
+### Why This Architecture?
+
+#### 1. Separation of Concerns (Single Responsibility Principle)
+
+Each component has ONE job:
+
+- **Enricher**: Knows how to talk to ONE provider for ONE product
+- **Registry**: Knows how to store and find enrichers
+- **Controller**: Knows how to route requests
+- **Strategy**: Knows how to combine source + provider data
+
+#### 2. Open/Closed Principle
+
+**Open for extension, closed for modification**:
+
+```java
+// Want to add a new provider? Just create a new enricher!
+@EnricherMetadata(type="credit-report", tenant="tenant-c")
+public class CreditSafeEnricher extends DataEnricher { ... }
+
+// That's it! No changes to:
+// - Controllers (they're in the library)
+// - Registry (auto-registration)
+// - Configuration (metadata-driven)
+// - Other enrichers (independent)
+```
+
+#### 3. Dependency Inversion Principle
+
+High-level modules don't depend on low-level modules. Both depend on abstractions:
+
+```
+SmartEnrichmentController
+         ↓ depends on
+    DataEnricher (abstraction)
+         ↑ implements
+         │
+EquifaxSpainEnricher (concrete implementation)
+```
+
+This means:
+- Controller doesn't know about Equifax
+- Controller works with ANY enricher
+- Can swap enrichers without changing controller
+
+#### 4. Liskov Substitution Principle
+
+Any enricher can be substituted for another enricher of the same type:
+
+```java
+// These are interchangeable from the controller's perspective
+DataEnricher enricher1 = new EquifaxSpainEnricher();
+DataEnricher enricher2 = new ExperianUsaEnricher();
+DataEnricher enricher3 = new CreditSafeEnricher();
+
+// Controller doesn't care which one it uses
+enricher.enrich(request);  // Works with any of them
 ```
 
 ### Key Principles
@@ -483,8 +855,6 @@ You **ONLY** need to:
 
 **Key Point**: The controllers (`SmartEnrichmentController`, etc.) are **inside lib-common-data JAR**, not in your microservice code. Spring Boot's `@ComponentScan` from `DataEnrichmentAutoConfiguration` automatically discovers and registers them.
 
-**Important Note**: There is a deprecated `AbstractDataEnricherController` class that you might see in the codebase. This is an **old pattern** that required microservices to manually extend it and create controllers. **Do NOT use it** - it's marked for removal. The new pattern (October 2025) uses only the 3 global controllers above.
-
 ### Example: Complete Microservice Structure
 
 ```
@@ -536,15 +906,17 @@ POST http://localhost:8080/api/v1/enrichment/operations/execute
 
 ### Configuration
 
-The global endpoints are **enabled by default**. To disable them:
+The global endpoints are **enabled by default**. They are controlled by a single property:
 
 ```yaml
 firefly:
   data:
     enrichment:
       discovery:
-        enabled: false  # Disables all global endpoints
+        enabled: false  # Disables SmartEnrichmentController, EnrichmentDiscoveryController, GlobalEnrichmentHealthController, and GlobalOperationsController
 ```
+
+**Note**: The `discovery.enabled` property controls ALL global enrichment controllers, not just the discovery endpoint.
 
 ### Summary
 
@@ -564,13 +936,42 @@ firefly:
 
 ## Enrichment Strategies
 
-Data Enrichers support **four enrichment strategies** that control how provider data is combined with your source data.
+### The Decorator Pattern in Action
 
-### Strategy 1: ENHANCE
+Enrichment strategies implement the **Decorator Pattern** - they define how to "decorate" (enhance) your source data with provider data.
+
+Think of it like decorating a cake:
+- **Source Data** = Base cake (your existing data)
+- **Provider Data** = Decorations (external data)
+- **Strategy** = How to apply decorations (fill gaps? replace everything? add on top?)
+
+### Why Multiple Strategies?
+
+Different use cases need different decoration approaches:
+
+| Strategy | Analogy | Use Case |
+|----------|---------|----------|
+| **ENHANCE** | Fill holes in the cake | You have partial data, fill only gaps |
+| **MERGE** | Add layers to the cake | Combine both, provider wins conflicts |
+| **REPLACE** | Replace the entire cake | Provider data is authoritative |
+| **RAW** | Just the decorations | You only want provider data |
+
+### Strategy 1: ENHANCE (Conservative Decorator)
+
+**Pattern**: Only decorate where nothing exists
 
 **Purpose**: Fill only null/empty fields from provider data, preserving existing data.
 
 **Use Case**: You have partial data and want to fill gaps without overwriting existing values.
+
+**Mental Model**:
+```
+if (source.field == null) {
+    source.field = provider.field;  // Decorate
+} else {
+    // Keep source.field (don't decorate)
+}
+```
 
 **Example**:
 
@@ -610,9 +1011,21 @@ POST /api/v1/enrichment/smart
 }
 ```
 
-### Strategy 2: MERGE
+### Strategy 2: MERGE (Aggressive Decorator)
+
+**Pattern**: Decorate everything, provider wins conflicts
 
 **Purpose**: Combine source and provider data, with provider data taking precedence on conflicts.
+
+**Mental Model**:
+```
+result = source;  // Start with source
+for (field in provider) {
+    if (provider.field != null) {
+        result.field = provider.field;  // Provider wins
+    }
+}
+```
 
 **Use Case**: You want the most complete data from both sources, preferring provider data when both exist.
 
@@ -650,11 +1063,18 @@ POST /api/v1/enrichment/smart
 }
 ```
 
-### Strategy 3: REPLACE
+### Strategy 3: REPLACE (Full Replacement)
+
+**Pattern**: Throw away source, use only provider
 
 **Purpose**: Completely replace source data with provider data (transformed to your DTO format).
 
 **Use Case**: Provider data is authoritative and should override everything.
+
+**Mental Model**:
+```
+result = provider;  // Ignore source completely
+```
 
 **Example**:
 
@@ -690,11 +1110,19 @@ POST /api/v1/enrichment/smart
 }
 ```
 
-### Strategy 4: RAW
+### Strategy 4: RAW (No Decoration)
 
-**Purpose**: Return raw bureau data without transformation or merging.
+**Pattern**: Return provider data as-is (after mapping to target DTO)
 
-**Use Case 1 - Bureau Abstraction**: You want to abstract bureau implementations behind a unified API.
+**Purpose**: Return raw provider data without transformation or merging.
+
+**Mental Model**:
+```
+result = provider;  // No decoration, just provider data
+// But still mapped to your target DTO format
+```
+
+**Use Case 1 - Provider Abstraction**: You want to abstract provider implementations behind a unified API.
 
 ```java
 // Request for Spain (uses Equifax Spain)
@@ -776,6 +1204,53 @@ POST /api/v1/enrichment/smart
 - You're debugging provider responses
 - You want to process provider data yourself
 - You're building a provider abstraction layer
+
+### Strategy Comparison: Visual Summary
+
+```
+Given:
+  Source:   { name: "Acme", score: 700, rating: "B" }
+  Provider: { name: "ACME CORP", score: 750, rating: "A", risk: "LOW" }
+
+Results:
+
+ENHANCE (Conservative - fill gaps only):
+  { name: "Acme",      ← kept (not null)
+    score: 700,        ← kept (not null)
+    rating: "B",       ← kept (not null)
+    risk: "LOW" }      ← added (was null)
+
+MERGE (Aggressive - provider wins):
+  { name: "ACME CORP", ← provider wins
+    score: 750,        ← provider wins
+    rating: "A",       ← provider wins
+    risk: "LOW" }      ← added
+
+REPLACE (Full replacement):
+  { name: "ACME CORP", ← provider only
+    score: 750,        ← provider only
+    rating: "A",       ← provider only
+    risk: "LOW" }      ← provider only
+  (source completely ignored)
+
+RAW (No decoration):
+  { name: "ACME CORP", ← provider only
+    score: 750,        ← provider only
+    rating: "A",       ← provider only
+    risk: "LOW" }      ← provider only
+  (source completely ignored, same as REPLACE)
+```
+
+### When to Use Each Strategy?
+
+| Scenario | Strategy | Why? |
+|----------|----------|------|
+| Filling missing data in your database | **ENHANCE** | Preserve existing data, only fill gaps |
+| Getting latest data from provider | **MERGE** | Combine both, prefer fresh provider data |
+| Provider is single source of truth | **REPLACE** | Provider data is authoritative |
+| Abstracting multiple providers | **RAW** | Hide provider differences behind common API |
+| Debugging provider responses | **RAW** | See exactly what provider returns |
+| Building data pipeline | **MERGE** | Combine multiple sources |
 
 ---
 
@@ -1385,8 +1860,8 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication(scanBasePackages = {
-    "com.firefly.creditbureaus",
-    "com.firefly.common.data"
+    "com.firefly.creditbureaus",      // Your microservice package
+    "com.firefly.common.data"         // Required: lib-common-data package for auto-configuration
 })
 public class CreditBureausApplication {
 
@@ -1395,6 +1870,15 @@ public class CreditBureausApplication {
     }
 }
 ```
+
+**Important**: The `scanBasePackages` must include `"com.firefly.common.data"` to enable auto-configuration of:
+- Global REST controllers (SmartEnrichmentController, EnrichmentDiscoveryController, etc.)
+- DataEnricherRegistry
+- Enrichment cache service
+- Event publishers
+- Observability and resiliency components
+
+Without this, the global endpoints will not be available.
 
 **application.yml**:
 
@@ -1432,31 +1916,39 @@ experian:
 # Firefly Common Data Configuration
 firefly:
   data:
+    # Enrichment Configuration
     enrichment:
-      enabled: true
-      cache:
-        enabled: true
-        ttl: 3600
+      enabled: true                    # Enable data enrichment (default: true)
+      publish-events: true             # Publish enrichment events (default: true)
+      cache-enabled: true              # Enable caching (default: false, requires lib-common-cache)
+      cache-ttl-seconds: 3600          # Cache TTL in seconds (default: 3600)
+      default-timeout-seconds: 30      # Default timeout (default: 30)
+      max-batch-size: 100              # Max batch size (default: 100)
+      batch-parallelism: 10            # Batch parallelism (default: 10)
+      batch-fail-fast: false           # Fail fast on batch errors (default: false)
       discovery:
-        enabled: true
-    resiliency:
-      circuit-breaker:
-        enabled: true
-        failure-rate-threshold: 50
-        wait-duration-in-open-state: 60s
-      retry:
-        enabled: true
-        max-attempts: 3
-        wait-duration: 1s
-      rate-limiter:
-        enabled: true
-        limit-for-period: 100
-        limit-refresh-period: 1s
-    observability:
-      tracing:
-        enabled: true
-      metrics:
-        enabled: true
+        enabled: true                  # Enable global controllers (default: true)
+
+    # Resiliency Configuration (from lib-common-data orchestration)
+    orchestration:
+      resiliency:
+        circuit-breaker:
+          enabled: true
+          failure-rate-threshold: 50
+          wait-duration-in-open-state: 60s
+        retry:
+          enabled: true
+          max-attempts: 3
+          wait-duration: 1s
+        rate-limiter:
+          enabled: true
+          limit-for-period: 100
+          limit-refresh-period: 1s
+
+      # Observability Configuration
+      observability:
+        tracing-enabled: true
+        metrics-enabled: true
 ```
 
 ### Step 5: Run and Test
@@ -2413,7 +2905,46 @@ class CreditBureausIntegrationTest {
 
 ## Configuration
 
-### Complete Configuration Reference
+### Overview
+
+Data enrichers are configured through Spring Boot properties under the `firefly.data.enrichment` prefix. The configuration controls caching, batching, events, operations, and integration with observability and resiliency features.
+
+### Configuration Properties Reference
+
+#### Enrichment Properties (`firefly.data.enrichment`)
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `enabled` | boolean | `true` | Enable/disable data enrichment feature |
+| `publish-events` | boolean | `true` | Publish enrichment lifecycle events |
+| `cache-enabled` | boolean | `false` | Enable caching (requires lib-common-cache) |
+| `cache-ttl-seconds` | int | `3600` | Cache TTL in seconds (1 hour) |
+| `default-timeout-seconds` | int | `30` | Default timeout for enrichment operations |
+| `capture-raw-responses` | boolean | `false` | Capture raw provider responses for audit |
+| `max-concurrent-enrichments` | int | `100` | Maximum concurrent enrichment operations |
+| `retry-enabled` | boolean | `true` | Enable automatic retry on failure |
+| `max-retry-attempts` | int | `3` | Maximum number of retry attempts |
+| `max-batch-size` | int | `100` | Maximum requests per batch |
+| `batch-parallelism` | int | `10` | Parallel processing level for batches |
+| `batch-fail-fast` | boolean | `false` | Fail entire batch on first error |
+| `discovery.enabled` | boolean | `true` | Enable global REST controllers |
+
+#### Operations Properties (`firefly.data.enrichment.operations`)
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `observability-enabled` | boolean | `true` | Enable observability for operations |
+| `resiliency-enabled` | boolean | `true` | Enable resiliency patterns for operations |
+| `cache-enabled` | boolean | `true` | Enable caching for operations |
+| `cache-ttl-seconds` | int | `1800` | Cache TTL for operations (30 minutes) |
+| `default-timeout-seconds` | int | `15` | Default timeout for operations |
+| `validation-enabled` | boolean | `true` | Enable Jakarta Validation |
+| `publish-events` | boolean | `true` | Publish operation events |
+| `max-retry-attempts` | int | `2` | Max retry attempts for operations |
+| `circuit-breaker-enabled` | boolean | `true` | Enable circuit breaker for operations |
+| `rate-limiter-enabled` | boolean | `true` | Enable rate limiting for operations |
+
+### Complete Configuration Example
 
 ```yaml
 server:
@@ -2441,57 +2972,61 @@ firefly:
   data:
     # Enrichment Configuration
     enrichment:
-      enabled: true
-      cache:
-        enabled: true
-        ttl: 3600  # 1 hour
-        max-size: 10000
-      validation:
-        enabled: true
-        fail-fast: true
+      enabled: true                      # Enable data enrichment (default: true)
+      publish-events: true               # Publish enrichment events (default: true)
+      cache-enabled: true                # Enable caching (default: false, requires lib-common-cache)
+      cache-ttl-seconds: 3600            # Cache TTL in seconds (default: 3600 = 1 hour)
+      default-timeout-seconds: 30        # Default timeout for enrichment operations (default: 30)
+      capture-raw-responses: false       # Capture raw provider responses for audit (default: false)
+      max-concurrent-enrichments: 100    # Max concurrent enrichments (default: 100)
+      retry-enabled: true                # Enable automatic retry (default: true)
+      max-retry-attempts: 3              # Max retry attempts (default: 3)
+      max-batch-size: 100                # Maximum requests per batch (default: 100)
+      batch-parallelism: 10              # Parallel processing level (default: 10)
+      batch-fail-fast: false             # Fail entire batch on first error (default: false)
+      discovery:
+        enabled: true                    # Enable global controllers (default: true)
 
-    # Resiliency Configuration
-    resiliency:
-      circuit-breaker:
-        enabled: true
-        failure-rate-threshold: 50  # Open circuit if 50% failures
-        wait-duration-in-open-state: 60s
-        permitted-number-of-calls-in-half-open-state: 10
-        sliding-window-size: 100
-      retry:
-        enabled: true
-        max-attempts: 3
-        wait-duration: 1s
-        exponential-backoff-multiplier: 2
-      rate-limiter:
-        enabled: true
-        limit-for-period: 100
-        limit-refresh-period: 1s
-        timeout-duration: 5s
-      timeout:
-        enabled: true
-        duration: 30s
+      # Custom Operations Configuration
+      operations:
+        observability-enabled: true      # Enable observability for operations (default: true)
+        resiliency-enabled: true         # Enable resiliency for operations (default: true)
+        cache-enabled: true              # Enable caching for operations (default: true)
+        cache-ttl-seconds: 1800          # Cache TTL for operations (default: 1800 = 30 min)
+        default-timeout-seconds: 15      # Default timeout for operations (default: 15)
+        validation-enabled: true         # Enable Jakarta Validation (default: true)
+        publish-events: true             # Publish operation events (default: true)
+        max-retry-attempts: 2            # Max retry attempts for operations (default: 2)
+        circuit-breaker-enabled: true    # Enable circuit breaker (default: true)
+        rate-limiter-enabled: true       # Enable rate limiting (default: true)
 
-    # Observability Configuration
-    observability:
-      tracing:
-        enabled: true
-        sample-rate: 1.0  # 100% sampling
-      metrics:
-        enabled: true
-        export-interval: 60s
-      logging:
-        enabled: true
-        level: INFO
+    # Resiliency Configuration (from lib-common-data orchestration)
+    orchestration:
+      resiliency:
+        circuit-breaker:
+          enabled: true
+          failure-rate-threshold: 50                        # Open circuit if 50% failures
+          wait-duration-in-open-state: 60s
+          permitted-number-of-calls-in-half-open-state: 10
+          sliding-window-size: 100
+        retry:
+          enabled: true
+          max-attempts: 3
+          wait-duration: 1s
+          exponential-backoff-multiplier: 2
+        rate-limiter:
+          enabled: true
+          limit-for-period: 100
+          limit-refresh-period: 1s
+          timeout-duration: 5s
+        timeout:
+          enabled: true
+          duration: 30s
 
-    # Event Publishing Configuration
-    events:
-      enabled: true
-      async: true
-      topics:
-        enrichment-started: enrichment.started
-        enrichment-completed: enrichment.completed
-        enrichment-failed: enrichment.failed
+      # Observability Configuration
+      observability:
+        tracing-enabled: true
+        metrics-enabled: true
 
 # Management Endpoints
 management:
@@ -2508,6 +3043,29 @@ management:
       probability: 1.0
 ```
 
+### Available Endpoints
+
+When enrichment is enabled, the following REST endpoints are automatically available:
+
+#### Smart Enrichment
+- **POST** `/api/v1/enrichment/smart` - Single enrichment with automatic provider selection
+- **POST** `/api/v1/enrichment/smart/batch` - Batch enrichment with parallel processing
+
+#### Discovery
+- **GET** `/api/v1/enrichment/providers` - List all available enrichers
+  - Query params: `type` (optional), `tenantId` (optional)
+
+#### Health
+- **GET** `/api/v1/enrichment/health` - Global health check for all enrichers
+  - Query params: `type` (optional), `tenantId` (optional)
+
+#### Operations
+- **GET** `/api/v1/enrichment/operations` - List all custom operations
+  - Query params: `type` (optional), `tenantId` (optional)
+- **POST** `/api/v1/enrichment/operations/execute` - Execute a custom operation
+
+All endpoints are controlled by `firefly.data.enrichment.discovery.enabled` property.
+
 ### Environment-Specific Configuration
 
 **application-dev.yml**:
@@ -2516,11 +3074,11 @@ management:
 firefly:
   data:
     enrichment:
-      cache:
-        enabled: false  # Disable cache in dev
-    observability:
-      tracing:
-        sample-rate: 1.0  # 100% sampling in dev
+      cache-enabled: false           # Disable cache in dev for fresh data
+      publish-events: false          # Disable events in dev to reduce noise
+    orchestration:
+      observability:
+        tracing-enabled: true        # Full tracing in dev
 ```
 
 **application-prod.yml**:
@@ -2529,15 +3087,17 @@ firefly:
 firefly:
   data:
     enrichment:
-      cache:
-        enabled: true
-        ttl: 7200  # 2 hours in prod
-    resiliency:
-      circuit-breaker:
-        failure-rate-threshold: 30  # More aggressive in prod
-    observability:
-      tracing:
-        sample-rate: 0.1  # 10% sampling in prod
+      cache-enabled: true
+      cache-ttl-seconds: 7200        # 2 hours in prod
+      max-batch-size: 200            # Higher batch size in prod
+      batch-parallelism: 20          # More parallelism in prod
+    orchestration:
+      resiliency:
+        circuit-breaker:
+          failure-rate-threshold: 30  # More aggressive in prod
+      observability:
+        tracing-enabled: true
+        metrics-enabled: true
 ```
 
 ---
@@ -2719,24 +3279,29 @@ credit-bureaus-app/
 ```yaml
 firefly:
   data:
-    resiliency:
-      enabled: true  # Using all defaults
+    orchestration:
+      resiliency:
+        enabled: true  # Using all defaults
 ```
 
-**✅ DO** tune based on your bureau's characteristics:
+**✅ DO** tune based on your provider's characteristics:
 
 ```yaml
 firefly:
   data:
-    resiliency:
-      circuit-breaker:
-        failure-rate-threshold: 30  # Equifax Spain can be flaky
-        wait-duration-in-open-state: 120s  # Give it time to recover
-      retry:
-        max-attempts: 5  # Equifax has transient errors
-        wait-duration: 2s
-      timeout:
-        duration: 45s  # Credit bureau APIs can be slow
+    enrichment:
+      default-timeout-seconds: 45    # Credit bureau APIs can be slow
+      max-retry-attempts: 5          # Providers may have transient errors
+    orchestration:
+      resiliency:
+        circuit-breaker:
+          failure-rate-threshold: 30              # Provider can be flaky
+          wait-duration-in-open-state: 120s       # Give it time to recover
+        retry:
+          max-attempts: 5
+          wait-duration: 2s
+        timeout:
+          duration: 45s
 ```
 
 ### 10. Monitor and Observe
@@ -2746,8 +3311,12 @@ firefly:
 ```yaml
 firefly:
   data:
-    observability:
-      enabled: false  # No visibility!
+    enrichment:
+      publish-events: false  # No events!
+    orchestration:
+      observability:
+        tracing-enabled: false  # No visibility!
+        metrics-enabled: false
 ```
 
 **✅ DO** enable full observability:
@@ -2755,19 +3324,105 @@ firefly:
 ```yaml
 firefly:
   data:
-    observability:
-      tracing:
-        enabled: true
-      metrics:
-        enabled: true
-      logging:
-        enabled: true
+    enrichment:
+      publish-events: true              # Publish enrichment lifecycle events
+    orchestration:
+      observability:
+        tracing-enabled: true           # Enable distributed tracing
+        metrics-enabled: true           # Enable metrics collection
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info,metrics,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 1.0                  # 100% sampling (adjust for prod)
+```
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+#### 1. Endpoints Not Available (404 Not Found)
+
+**Problem**: `/api/v1/enrichment/smart` returns 404
+
+**Solutions**:
+- Check that `firefly.data.enrichment.enabled=true` (default)
+- Check that `firefly.data.enrichment.discovery.enabled=true` (default)
+- Verify `@ComponentScan` includes `com.firefly.common.data` package
+- Check Spring Boot logs for auto-configuration messages
+
+#### 2. No Enricher Found for Type/Tenant
+
+**Problem**: "No enricher found for type 'X' and tenant 'Y'"
+
+**Solutions**:
+- Verify enricher has `@EnricherMetadata` annotation with correct `type` and `tenantId`
+- Check enricher is a Spring bean (annotated with `@Component` or similar)
+- Verify enricher extends `DataEnricher<TSource, TProvider, TTarget>`
+- Check application logs for enricher registration messages
+
+#### 3. Cache Not Working
+
+**Problem**: Enrichment results are not cached
+
+**Solutions**:
+- Verify `lib-common-cache` is in dependencies
+- Check `firefly.data.enrichment.cache-enabled=true`
+- Ensure `CacheAdapter` bean is available
+- Check cache configuration in application logs
+
+#### 4. Events Not Published
+
+**Problem**: Enrichment events are not being published
+
+**Solutions**:
+- Check `firefly.data.enrichment.publish-events=true` (default)
+- Verify `EnrichmentEventPublisher` bean is created
+- Check event infrastructure (Kafka, RabbitMQ, etc.) is configured
+- Review application logs for event publishing errors
+
+#### 5. Operations Not Discovered
+
+**Problem**: Custom operations don't appear in `/api/v1/enrichment/operations`
+
+**Solutions**:
+- Verify operation class has `@EnricherOperation` annotation
+- Check operation extends `AbstractEnricherOperation<TRequest, TResponse>`
+- Ensure operation is a Spring bean (annotation includes `@Component`)
+- Verify enricher's `getOperations()` method returns the operation
+- Check that operation is properly injected into enricher
+
+#### 6. Resiliency Not Applied
+
+**Problem**: Circuit breaker/retry not working
+
+**Solutions**:
+- Verify `lib-common-data` orchestration resiliency is enabled
+- Check `firefly.data.orchestration.resiliency.*` properties
+- Ensure `ResiliencyDecoratorService` bean is available
+- Review logs for resiliency decorator messages
+
+### Debug Logging
+
+Enable debug logging to troubleshoot issues:
+
+```yaml
+logging:
+  level:
+    com.firefly.common.data: DEBUG
+    com.firefly.common.data.controller: DEBUG
+    com.firefly.common.data.service: DEBUG
+    com.firefly.common.data.config: DEBUG
 ```
 
 ---
@@ -2778,32 +3433,53 @@ management:
 
 1. **What Data Enrichers Are**: Specialized microservices for data enrichment AND provider abstraction
 2. **Why They Exist**: Solve multi-provider, multi-tenant, multi-product integration challenges
-3. **Architecture**: One enricher = one type, zero boilerplate, smart routing
-4. **Enrichment Strategies**: ENHANCE, MERGE, REPLACE, RAW - each for different use cases
-5. **Multi-Tenancy**: Different implementations per tenant, different products per tenant
-6. **Priority-Based Selection**: Control which provider is used when multiple match
-7. **Custom Operations**: Auxiliary operations like search, validate, lookup
-8. **Testing**: Unit and integration testing strategies
-9. **Configuration**: Complete configuration reference
-10. **Best Practices**: Production-ready patterns and anti-patterns
+3. **Architecture**: One enricher = one type, zero boilerplate, automatic REST endpoints
+4. **No Controllers Needed**: Global controllers are automatically created by the library
+5. **Enrichment Strategies**: ENHANCE, MERGE, REPLACE, RAW - each for different use cases
+6. **Batch Enrichment**: Parallel processing with configurable concurrency and error handling
+7. **Multi-Tenancy**: Different implementations per tenant, different products per tenant
+8. **Priority-Based Selection**: Control which provider is used when multiple match
+9. **Custom Operations**: Auxiliary operations like search, validate, lookup with full observability
+10. **Testing**: Unit and integration testing strategies
+11. **Configuration**: Complete configuration reference with all available properties
+12. **Best Practices**: Production-ready patterns and anti-patterns
+13. **Troubleshooting**: Common issues and solutions
 
 ### What You Get Automatically
 
 When you create an enricher with `@EnricherMetadata`, you automatically get:
 
-- ✅ **Smart Enrichment Endpoint** - `POST /api/v1/enrichment/smart`
-- ✅ **Batch Enrichment Endpoint** - `POST /api/v1/enrichment/smart/batch`
-- ✅ **Discovery Endpoint** - `GET /api/v1/enrichment/providers`
-- ✅ **Global Health Endpoint** - `GET /api/v1/enrichment/health`
-- ✅ **Distributed Tracing** - Micrometer integration
-- ✅ **Metrics** - Prometheus-compatible metrics
-- ✅ **Circuit Breaker** - Resilience4j integration
+#### REST Endpoints (via Global Controllers)
+- ✅ **Smart Enrichment** - `POST /api/v1/enrichment/smart` (single)
+- ✅ **Batch Enrichment** - `POST /api/v1/enrichment/smart/batch` (parallel)
+- ✅ **Discovery** - `GET /api/v1/enrichment/providers` (list enrichers)
+- ✅ **Global Health** - `GET /api/v1/enrichment/health` (health checks)
+- ✅ **Operations Catalog** - `GET /api/v1/enrichment/operations` (list operations)
+- ✅ **Operations Execution** - `POST /api/v1/enrichment/operations/execute` (run operations)
+
+#### Observability
+- ✅ **Distributed Tracing** - Micrometer Observation integration
+- ✅ **Metrics** - Prometheus-compatible metrics (success rate, latency, errors)
+- ✅ **Event Publishing** - Enrichment lifecycle events (started, completed, failed)
+- ✅ **Structured Logging** - Comprehensive logging with context
+
+#### Resiliency
+- ✅ **Circuit Breaker** - Resilience4j integration with configurable thresholds
 - ✅ **Retry Logic** - Configurable retry with exponential backoff
-- ✅ **Rate Limiting** - Protect your providers
+- ✅ **Rate Limiting** - Protect providers from overload
 - ✅ **Timeout Handling** - Prevent hanging requests
-- ✅ **Event Publishing** - Enrichment lifecycle events
-- ✅ **Caching** - Configurable caching layer
-- ✅ **Validation** - Fluent validation DSL
+- ✅ **Bulkhead** - Isolate failures
+
+#### Performance
+- ✅ **Caching** - Tenant-isolated caching with configurable TTL (requires lib-common-cache)
+- ✅ **Batch Processing** - Parallel batch enrichment with configurable concurrency
+- ✅ **Request Validation** - Fluent validation DSL with clear error messages
+
+#### Developer Experience
+- ✅ **Zero Boilerplate** - No controllers, no configuration, just enricher logic
+- ✅ **Type Safety** - Generic types for source, provider, and target DTOs
+- ✅ **Auto-Registration** - Enrichers automatically discovered and registered
+- ✅ **JSON Schema** - Automatic schema generation for operations
 
 ### Next Steps
 
