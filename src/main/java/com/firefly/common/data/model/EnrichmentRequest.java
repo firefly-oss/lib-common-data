@@ -24,6 +24,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Request model for data enrichment operations.
@@ -36,26 +37,26 @@ import java.util.Map;
  * <pre>{@code
  * // Enhance company data with Financial Data Provider
  * EnrichmentRequest request = EnrichmentRequest.builder()
- *     .enrichmentType("company-profile")
+ *     .type("company-profile")
  *     .strategy(EnrichmentStrategy.ENHANCE)
  *     .sourceDto(partialCompanyData)
  *     .parameters(Map.of(
  *         "companyId", "12345",
  *         "includeFinancials", true
  *     ))
- *     .tenantId("tenant-abc")
+ *     .tenantId(UUID.fromString("550e8400-e29b-41d4-a716-446655440001"))
  *     .requestId(UUID.randomUUID().toString())
  *     .build();
  *
  * // Get credit report from Credit Bureau Provider
  * EnrichmentRequest request = EnrichmentRequest.builder()
- *     .enrichmentType("credit-report")
+ *     .type("credit-report")
  *     .strategy(EnrichmentStrategy.REPLACE)
  *     .parameters(Map.of(
  *         "subjectId", "12345",
  *         "reportType", "FULL"
  *     ))
- *     .tenantId("tenant-xyz")
+ *     .tenantId(UUID.fromString("550e8400-e29b-41d4-a716-446655440002"))
  *     .build();
  * }</pre>
  */
@@ -68,7 +69,7 @@ public class EnrichmentRequest {
     
     /**
      * The type of enrichment being requested.
-     * 
+     *
      * <p>This identifies what kind of enrichment to perform, such as:</p>
      * <ul>
      *   <li>"company-profile" - Company information enrichment</li>
@@ -76,10 +77,13 @@ public class EnrichmentRequest {
      *   <li>"credit-report" - Credit report for individual or company</li>
      *   <li>"address-verification" - Address validation and standardization</li>
      * </ul>
+     *
+     * <p>When an enricher supports multiple types, this tells the enricher which
+     * specific data subset to fetch from the provider.</p>
      */
-    @NotNull(message = "Enrichment type is required")
+    @NotNull(message = "Type is required")
     @Schema(description = "Type of enrichment to perform", example = "company-profile", required = true)
-    private String enrichmentType;
+    private String type;
     
     /**
      * The enrichment strategy to apply.
@@ -117,13 +121,14 @@ public class EnrichmentRequest {
     
     /**
      * Tenant identifier for multi-tenant environments.
-     * 
-     * <p>This is used to determine which provider configuration to use,
-     * as different tenants may use different providers or have different
-     * provider credentials.</p>
+     *
+     * <p>This is used to select which enricher to use, as different tenants
+     * may have different providers configured. The registry will select enrichers
+     * that match this tenant ID (or global enrichers if no tenant-specific enricher exists).</p>
      */
-    @Schema(description = "Tenant identifier for multi-tenant routing", example = "tenant-abc")
-    private String tenantId;
+    @Schema(description = "Tenant identifier (UUID) for multi-tenant routing",
+            example = "550e8400-e29b-41d4-a716-446655440001")
+    private UUID tenantId;
     
     /**
      * Request ID for tracing and correlation.
@@ -141,33 +146,12 @@ public class EnrichmentRequest {
     
     /**
      * Additional metadata for the enrichment request.
-     * 
+     *
      * <p>Can include custom headers, provider-specific options, or other contextual information.</p>
      */
     @Schema(description = "Additional metadata for the request")
     private Map<String, String> metadata;
-    
-    /**
-     * The fully qualified class name of the target DTO for the enrichment result.
-     * 
-     * <p>This is used to determine which mapper should be used to transform
-     * the provider response into the target DTO.</p>
-     * 
-     * <p>Example: "com.firefly.customer.dto.CompanyProfileDTO"</p>
-     */
-    @Schema(description = "Target DTO class for the enrichment result", 
-            example = "com.firefly.customer.dto.CompanyProfileDTO")
-    private String targetDtoClass;
-    
-    /**
-     * The name of the specific mapper to use for transformation.
-     * 
-     * <p>If not specified, the mapper will be auto-selected based on targetDtoClass.
-     * This is useful when multiple mappers exist for the same target type.</p>
-     */
-    @Schema(description = "Specific mapper name to use", example = "CompanyProfileMapperV2")
-    private String mapperName;
-    
+
     /**
      * Timeout for the enrichment operation in milliseconds.
      *
@@ -315,5 +299,6 @@ public class EnrichmentRequest {
         }
         throw new ClassCastException("Source DTO is not of type " + clazz.getName());
     }
+
 }
 

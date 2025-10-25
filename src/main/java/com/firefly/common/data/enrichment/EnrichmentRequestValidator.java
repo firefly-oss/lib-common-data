@@ -139,7 +139,7 @@ public class EnrichmentRequestValidator {
      * @return this validator for chaining
      */
     public EnrichmentRequestValidator requireEnrichmentType() {
-        if (request.getEnrichmentType() == null || request.getEnrichmentType().trim().isEmpty()) {
+        if (request.getType() == null || request.getType().trim().isEmpty()) {
             errors.add("Enrichment type is required");
         }
         return this;
@@ -170,7 +170,7 @@ public class EnrichmentRequestValidator {
      * @return this validator for chaining
      */
     public EnrichmentRequestValidator requireTenantId() {
-        if (request.getTenantId() == null || request.getTenantId().trim().isEmpty()) {
+        if (request.getTenantId() == null) {
             errors.add("Tenant ID is required");
         }
         return this;

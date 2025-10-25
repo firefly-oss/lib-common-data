@@ -104,7 +104,7 @@ public class EnrichmentResponse {
      * The type of enrichment that was performed.
      */
     @Schema(description = "Type of enrichment performed", example = "company-profile")
-    private String enrichmentType;
+    private String type;
     
     /**
      * The strategy that was applied.
@@ -169,43 +169,44 @@ public class EnrichmentResponse {
      *
      * @param enrichedData the enriched data
      * @param providerName the provider name
-     * @param enrichmentType the enrichment type
+     * @param type the enrichment type
      * @param message success message
      * @return a successful EnrichmentResponse
      */
-    public static EnrichmentResponse success(Object enrichedData, 
+    public static EnrichmentResponse success(Object enrichedData,
                                              String providerName,
-                                             String enrichmentType,
+                                             String type,
                                              String message) {
         return EnrichmentResponse.builder()
                 .success(true)
                 .enrichedData(enrichedData)
                 .providerName(providerName)
-                .enrichmentType(enrichmentType)
+                .type(type)
                 .message(message)
                 .timestamp(Instant.now())
                 .build();
     }
-    
+
     /**
      * Creates a failed enrichment response.
      *
-     * @param enrichmentType the enrichment type
+     * @param type the enrichment type
      * @param providerName the provider name
      * @param error error message
      * @return a failed EnrichmentResponse
      */
-    public static EnrichmentResponse failure(String enrichmentType,
+    public static EnrichmentResponse failure(String type,
                                              String providerName,
                                              String error) {
         return EnrichmentResponse.builder()
                 .success(false)
-                .enrichmentType(enrichmentType)
+                .type(type)
                 .providerName(providerName)
                 .error(error)
                 .message("Enrichment failed")
                 .timestamp(Instant.now())
                 .build();
     }
+
 }
 

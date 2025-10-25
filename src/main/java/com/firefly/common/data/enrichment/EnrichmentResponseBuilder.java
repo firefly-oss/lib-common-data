@@ -59,7 +59,7 @@ public class EnrichmentResponseBuilder {
     private String message;
     private String error;
     private String providerName;
-    private String enrichmentType;
+    private String type;
     private EnrichmentStrategy strategy;
     private Double confidenceScore;
     private Integer fieldsEnriched;
@@ -106,7 +106,7 @@ public class EnrichmentResponseBuilder {
      */
     public EnrichmentResponseBuilder forRequest(EnrichmentRequest request) {
         if (request != null) {
-            this.enrichmentType = request.getEnrichmentType();
+            this.type = request.getType();
             this.strategy = request.getStrategy();
             this.requestId = request.getRequestId();
         }
@@ -127,14 +127,15 @@ public class EnrichmentResponseBuilder {
     /**
      * Sets the enrichment type.
      *
-     * @param enrichmentType the enrichment type
+     * @param type the enrichment type
      * @return this builder for chaining
      */
-    public EnrichmentResponseBuilder withEnrichmentType(String enrichmentType) {
-        this.enrichmentType = enrichmentType;
+    public EnrichmentResponseBuilder withType(String type) {
+        this.type = type;
         return this;
     }
-    
+
+
     /**
      * Sets the enrichment strategy.
      *
@@ -266,7 +267,7 @@ public class EnrichmentResponseBuilder {
                 .message(message)
                 .error(error)
                 .providerName(providerName)
-                .enrichmentType(enrichmentType)
+                .type(type)
                 .strategy(strategy)
                 .confidenceScore(confidenceScore)
                 .fieldsEnriched(fieldsEnriched)

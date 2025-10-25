@@ -41,7 +41,7 @@ import java.util.Map;
  *     "revenue": 1000000
  *   },
  *   "providerName": "Financial Data Provider",
- *   "enrichmentType": "company-profile",
+ *   "type": "company-profile",
  *   "strategy": "ENHANCE",
  *   "message": "Company data enriched successfully",
  *   "confidenceScore": 0.95,
@@ -122,7 +122,7 @@ public class EnrichmentApiResponse {
         description = "Type of enrichment performed",
         example = "company-profile"
     )
-    private String enrichmentType;
+    private String type;
     
     /**
      * Strategy used for enrichment.
