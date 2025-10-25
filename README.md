@@ -111,7 +111,7 @@ For quick operations (< 30 seconds):
 
 1. **EXECUTE**: Single operation that returns results immediately
 
-See [Synchronous Jobs Guide](docs/data-jobs/sync-jobs.md) for detailed documentation.
+See [Data Jobs — Complete Guide](docs/data-jobs/guide.md#quick-start-sync) for detailed documentation.
 
 ### 🎨 Service & Controller Interfaces
 
@@ -179,7 +179,7 @@ Standardized abstraction for enriching data from third-party providers (financia
 
 #### Core Features
 
-- **Type-Safe Enrichers** - Generic base class `TypedDataEnricher<TSource, TProvider, TTarget>` with automatic strategy application (67% less code!)
+- **Type-Safe Enrichers** - Generic base class `DataEnricher<TSource, TProvider, TTarget>` with automatic strategy application (67% less code!)
 - **Fluent Validation DSL** - Declarative parameter validation with `EnrichmentRequestValidator`
   - Required/optional parameters
   - Type validation (String, Integer, Boolean, etc.)
@@ -225,15 +225,15 @@ public record CompanySearchResponse(
     Double confidence
 ) {}
 
-// 2. Create operation class with @ProviderCustomOperation annotation
-@ProviderCustomOperation(
+// 2. Create operation class with @EnricherOperation annotation
+@EnricherOperation(
     operationId = "search-company",
     description = "Search for a company by name or tax ID to obtain provider internal ID",
     method = RequestMethod.GET,
     tags = {"lookup", "search"}
 )
 public class SearchCompanyOperation
-        extends AbstractProviderOperation<CompanySearchRequest, CompanySearchResponse> {
+        extends AbstractEnricherOperation<CompanySearchRequest, CompanySearchResponse> {
 
     private final RestClient providerClient;
 
@@ -259,13 +259,13 @@ public class SearchCompanyOperation
 
 // 3. Register operations in your enricher
 @Service
-public class CreditBureauEnricher extends TypedDataEnricher<...> {
+public class CreditBureauEnricher extends DataEnricher<...> {
 
     private final SearchCompanyOperation searchCompanyOperation;
     private final ValidateTaxIdOperation validateTaxIdOperation;
 
     @Override
-    public List<ProviderOperation<?, ?>> getOperations() {
+    public List<EnricherOperationInterface<?, ?>> getOperations() {
         return List.of(searchCompanyOperation, validateTaxIdOperation);
     }
 }
@@ -744,7 +744,7 @@ public class DataValidationSyncJobController extends AbstractSyncDataJobControll
 }
 ```
 
-**See [Synchronous Jobs Guide](docs/data-jobs/sync-jobs.md) for complete documentation.**
+**See [Data Jobs — Complete Guide](docs/data-jobs/guide.md#quick-start-sync) for complete documentation.**
 
 ---
 
@@ -771,16 +771,16 @@ credit:
     api-key: ${CREDIT_BUREAU_API_KEY}
 ```
 
-### 2. Implement Data Enricher (Recommended: Use TypedDataEnricher)
+### 2. Implement Data Enricher (Recommended: Use DataEnricher)
 
-**Option A: Extend TypedDataEnricher (Recommended)**
+**Option A: Extend DataEnricher (Recommended)**
 
 This approach provides built-in observability, resiliency, and automatic strategy application:
 
 ```java
 @Service
 public class FinancialDataEnricher
-        extends TypedDataEnricher<CompanyProfileDTO, FinancialDataResponse, CompanyProfileDTO> {
+        extends DataEnricher<CompanyProfileDTO, FinancialDataResponse, CompanyProfileDTO> {
 
     private final RestClient financialDataClient;
 
@@ -850,7 +850,7 @@ public class FinancialDataEnricher
 
 ### 3. Add Provider-Specific Custom Operations (Optional but Recommended)
 
-Many providers require auxiliary operations (search, validate, lookup). Create operation classes with `@ProviderCustomOperation` annotation:
+Many providers require auxiliary operations (search, validate, lookup). Create operation classes with `@EnricherOperation` annotation:
 
 ```java
 // Step 1: Define DTOs for your operation
@@ -868,14 +868,14 @@ public record CompanySearchResponse(
 ) {}
 
 // Step 2: Create operation class
-@ProviderCustomOperation(
+@EnricherOperation(
     operationId = "search-company",
     description = "Search for a company by name or tax ID to obtain provider internal ID",
     method = RequestMethod.GET,
     tags = {"lookup", "search"}
 )
 public class SearchCompanyOperation
-        extends AbstractProviderOperation<CompanySearchRequest, CompanySearchResponse> {
+        extends AbstractEnricherOperation<CompanySearchRequest, CompanySearchResponse> {
 
     private final RestClient bureauClient;
 
@@ -908,7 +908,7 @@ public class SearchCompanyOperation
 // Step 3: Register operations in your enricher
 @Service
 public class CreditBureauEnricher
-        extends TypedDataEnricher<CreditReportDTO, CreditBureauReportResponse, CreditReportDTO> {
+        extends DataEnricher<CreditReportDTO, CreditBureauReportResponse, CreditReportDTO> {
 
     private final SearchCompanyOperation searchCompanyOperation;
     private final ValidateTaxIdOperation validateTaxIdOperation;
@@ -923,7 +923,7 @@ public class CreditBureauEnricher
     }
 
     @Override
-    public List<ProviderOperation<?, ?>> getOperations() {
+    public List<EnricherOperationInterface<?, ?>> getOperations() {
         return List.of(searchCompanyOperation, validateTaxIdOperation);
     }
 
@@ -978,130 +978,139 @@ POST /api/v1/enrichment/credit-bureau/enrich
 - `fetchProviderData(EnrichmentRequest)` - Fetch data from the provider's API
 - `mapToTarget(TProvider)` - Map provider response to your target DTO format
 
-**Recommended Methods to Override:**
-- `getProviderName()` - Return the provider name (e.g., "Credit Bureau Provider")
-- `getSupportedEnrichmentTypes()` - Return enrichment types this enricher supports
-- `getEnricherDescription()` - Return a description of what this enricher does
+### 5. That's It! Your Enricher is Ready
 
-### 5. Implement Data Enricher Controller (Recommended: Use AbstractDataEnricherController)
+**No controller needed!** Your enricher is automatically available through global endpoints.
 
-**Option A: Extend AbstractDataEnricherController (Recommended)**
+**What you get automatically:**
 
-This approach provides automatic comprehensive logging for all HTTP requests/responses:
+1. **Smart Enrichment Endpoint** - Automatic routing by type + tenant
+   ```bash
+   POST /api/v1/enrichment/smart
+   ```
 
-```java
-@RestController
-@RequestMapping("/api/v1/enrichment/financial-data-company")
-@Tag(name = "Data Enrichment - Financial Data Company",
-     description = "Financial data company profile enrichment")
-public class FinancialDataCompanyController extends AbstractDataEnricherController {
+2. **Discovery Endpoint** - List all available enrichers
+   ```bash
+   GET /api/v1/enrichment/providers
+   GET /api/v1/enrichment/providers?type=company-profile
+   GET /api/v1/enrichment/providers?tenantId=550e8400-e29b-41d4-a716-446655440001
+   ```
 
-    public FinancialDataCompanyController(
-            @Qualifier("financialDataEnricher") DataEnricher enricher,
-            DataEnricherRegistry registry) {
-        super(enricher, registry);
-    }
+3. **Global Health Endpoint** - Health check for all enrichers
+   ```bash
+   GET /api/v1/enrichment/health
+   GET /api/v1/enrichment/health?type=company-profile
+   GET /api/v1/enrichment/health?tenantId=550e8400-e29b-41d4-a716-446655440001
+   ```
 
-    // That's it! All endpoints are implemented with automatic logging:
-    // POST /api/v1/enrichment/financial-data-company/enrich
-    // GET  /api/v1/enrichment/financial-data-company/health
-    // GET  /api/v1/enrichment/financial-data-company/operations (if ProviderOperationCatalog is implemented)
-    // GET|POST /api/v1/enrichment/financial-data-company/operation/{operationId} (for provider-specific operations)
-}
-```
-
-**URL Pattern:** `/api/v1/enrichment/{provider}-{region}-{type}`
-- **provider**: financial-data
-- **region**: (optional, e.g., spain, usa)
-- **type**: company
-
-**Benefits of using AbstractDataEnricherController:**
-- ✅ Automatic logging of all HTTP requests with parameters
-- ✅ Automatic logging of successful responses with enrichment details
-- ✅ Automatic logging of error responses with error details
-- ✅ Request/response timing information
-- ✅ All standard endpoints already implemented
-- ✅ Automatic endpoint registration with the enricher
-- ✅ Support for provider-specific operations (if enricher implements ProviderOperationCatalog)
-
-**Option B: Implement Custom Controller (Manual approach)**
-
-Only use this if you need custom endpoint behavior:
-
-```java
-@RestController
-@RequestMapping("/api/v1/enrichment/custom-provider")
-@Slf4j
-public class CustomEnricherController {
-
-    private final DataEnricher enricher;
-
-    public CustomEnricherController(DataEnricher enricher) {
-        this.enricher = enricher;
-    }
-
-    @PostMapping("/enrich")
-    public Mono<EnrichmentApiResponse> enrich(@RequestBody EnrichmentApiRequest request) {
-        log.info("Received enrichment request: type={}, strategy={}",
-                request.getEnrichmentType(), request.getStrategy());
-
-        return enricher.enrich(request.toEnrichmentRequest())
-            .map(EnrichmentApiResponse::fromEnrichmentResponse);
-    }
-}
-```
-
-### 6. Provider Discovery
-
-The library automatically provides a global discovery endpoint to list all available enrichers:
+**Example Usage:**
 
 ```bash
-# List all providers in this microservice
-GET /api/v1/enrichment/providers
+# Enrich company data using the Smart Endpoint
+curl -X POST http://localhost:8080/api/v1/enrichment/smart \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "company-profile",
+    "tenantId": "550e8400-e29b-41d4-a716-446655440001",
+    "source": {
+      "companyId": "12345",
+      "name": "Acme Corp"
+    },
+    "params": {
+      "includeFinancials": true
+    },
+    "strategy": "ENHANCE"
+  }'
+```
 
-Response:
+**Response:**
+```json
 {
-  "providers": [
-    {
-      "providerName": "Financial Data Provider",
-      "supportedTypes": ["company-profile", "company-financials"],
-      "description": "Enriches company data with financial and corporate information",
-      "endpoints": [
-        "/api/v1/enrichment/financial-data-company/enrich"
-      ],
-      "operations": null
-    }
-  ]
-}
-
-# Filter by enrichment type
-GET /api/v1/enrichment/providers?enrichmentType=company-profile
-
-Response:
-{
-  "providers": [
-    {
-      "providerName": "Financial Data Provider",
-      "supportedTypes": ["company-profile", "company-financials"],
-      ...
-    }
-  ]
+  "success": true,
+  "enrichedData": {
+    "companyId": "12345",
+    "name": "Acme Corp",
+    "revenue": 1000000,
+    "employees": 50,
+    "industry": "Technology"
+  },
+  "providerName": "Financial Data Provider",
+  "type": "company-profile",
+  "message": "Enrichment completed successfully"
 }
 ```
 
 **Benefits:**
-- ✅ Discover all available enrichers at runtime
-- ✅ Filter by enrichment type
-- ✅ Get provider metadata (name, description, supported types)
-- ✅ Get REST endpoint URLs
-- ✅ Useful for dynamic routing and service discovery
+- ✅ Zero boilerplate - no controllers to create
+- ✅ Automatic routing by type + tenant + priority
+- ✅ Automatic discovery and health checks
+- ✅ Multi-tenancy support out of the box
+- ✅ Priority-based provider selection
+- ✅ Comprehensive logging and observability
+- ✅ Resiliency patterns (circuit breaker, retry)
+- ✅ Event publishing
 
-**See [Data Enrichment Guide](docs/data-enrichers/data-enrichment.md) for complete documentation including:**
+> **📖 For more details**, see [Simplified Architecture Guide](docs/data-enrichers/SIMPLIFIED-ARCHITECTURE.md)
+
+### 6. Multi-Tenancy and Priority-Based Selection
+
+**One Provider, Multiple Tenants:**
+
+```java
+// Provider A - Spain tenant
+@EnricherMetadata(
+    providerName = "Provider A",
+    tenantId = "550e8400-e29b-41d4-a716-446655440001",  // Spain
+    type = "credit-report",
+    priority = 100
+)
+public class ProviderASpainCreditReportEnricher extends DataEnricher { ... }
+
+// Provider A - USA tenant (different implementation!)
+@EnricherMetadata(
+    providerName = "Provider A",
+    tenantId = "660e8400-e29b-41d4-a716-446655440002",  // USA
+    type = "credit-report",
+    priority = 100
+)
+public class ProviderAUSACreditReportEnricher extends DataEnricher { ... }
+```
+
+**Priority-Based Selection:**
+
+When multiple enrichers match the same type + tenant, the one with highest priority is selected:
+
+```java
+// Primary provider (high priority)
+@EnricherMetadata(
+    providerName = "Provider A",
+    tenantId = "550e8400-...",
+    type = "credit-report",
+    priority = 100  // Higher priority - will be selected
+)
+public class ProviderACreditReportEnricher { ... }
+
+// Fallback provider (lower priority)
+@EnricherMetadata(
+    providerName = "Provider B",
+    tenantId = "550e8400-...",
+    type = "credit-report",
+    priority = 50  // Lower priority - used as fallback
+)
+public class ProviderBCreditReportEnricher { ... }
+```
+
+**See [Simplified Architecture Guide](docs/data-enrichers/SIMPLIFIED-ARCHITECTURE.md) for:**
+- Complete multi-tenancy examples
+- Priority-based selection strategies
+- Global endpoints documentation
+- Migration from old approach
+
+**See [Data Enrichment Guide](docs/data-enrichers/data-enrichment.md) for:**
 - Provider-specific operations catalog
 - Advanced validation with EnrichmentRequestValidator
 - Custom enrichment strategies
 - Caching and performance optimization
-- Complete tutorial for building a professional enricher
 
 ## Architecture
 
@@ -1611,7 +1620,7 @@ All endpoints are documented with OpenAPI/Swagger annotations.
 
 #### Provider-Specific Custom Operations
 
-Enrichers can expose auxiliary operations specific to the provider's API using `@ProviderCustomOperation` annotation:
+Enrichers can expose auxiliary operations specific to the provider's API using `@EnricherOperation` annotation:
 
 ```java
 // 1. Define DTOs
@@ -1629,14 +1638,14 @@ public record CompanySearchResponse(
 ) {}
 
 // 2. Create operation class
-@ProviderCustomOperation(
+@EnricherOperation(
     operationId = "search-company",
     description = "Search for a company by name or tax ID to obtain provider internal ID",
     method = RequestMethod.GET,
     tags = {"lookup", "search"}
 )
 public class SearchCompanyOperation
-        extends AbstractProviderOperation<CompanySearchRequest, CompanySearchResponse> {
+        extends AbstractEnricherOperation<CompanySearchRequest, CompanySearchResponse> {
 
     private final RestClient providerClient;
 
@@ -1662,12 +1671,12 @@ public class SearchCompanyOperation
 
 // 3. Register in enricher
 @Service
-public class CreditBureauEnricher extends TypedDataEnricher<...> {
+public class CreditBureauEnricher extends DataEnricher<...> {
 
     private final SearchCompanyOperation searchCompanyOperation;
 
     @Override
-    public List<ProviderOperation<?, ?>> getOperations() {
+    public List<EnricherOperationInterface<?, ?>> getOperations() {
         return List.of(searchCompanyOperation);
     }
 }
@@ -1826,15 +1835,12 @@ For detailed documentation, see the [`docs/`](docs/) directory:
 ### 🚀 Quick Start Guides
 
 #### Data Jobs
-- **[Step-by-Step Guide: Data Jobs](docs/data-jobs/step-by-step-guide.md)** - Complete guide to building a data job microservice from scratch
+- **[Data Jobs — Complete Guide](docs/data-jobs/guide.md)** - Complete guide to building data jobs (async and sync) from scratch
   - Project setup and dependencies
   - Configuration (dev vs prod)
   - Creating job orchestrators (MOCK, AWS Step Functions, multiple orchestrators)
-  - Creating multiple data job services
-  - Creating multiple controllers
+  - Creating multiple data job services and controllers
   - Testing and troubleshooting
-- **[Multiple Jobs Example](docs/data-jobs/multiple-jobs-example.md)** - Real-world example with 3 different job types
-- **[Synchronous Jobs Guide](docs/data-jobs/sync-jobs.md)** - ⭐ Complete guide for synchronous data jobs
 
 #### Data Enrichers
 - **[Step-by-Step Guide: Data Enricher Microservice](docs/data-enrichers/enricher-microservice-guide.md)** - ⭐ **Complete guide to building a data enricher microservice**
@@ -1849,14 +1855,14 @@ For detailed documentation, see the [`docs/`](docs/) directory:
 - **[Architecture](docs/common/architecture.md)** - Deep dive into hexagonal architecture and design patterns
 - **[Getting Started](docs/common/getting-started.md)** - Basic guide with complete examples
 - **[Configuration](docs/common/configuration.md)** - Comprehensive configuration reference
-- **[Job Lifecycle](docs/data-jobs/job-lifecycle.md)** - Detailed explanation of job stages and data flow
+- **[Job Lifecycle](docs/data-jobs/guide.md#job-lifecycle-async)** - Detailed explanation of job stages and data flow
 
 ### Advanced Features
 - **[Observability](docs/common/observability.md)** - Distributed tracing, metrics, and health checks
 - **[Resiliency](docs/common/resiliency.md)** - Circuit breaker, retry, rate limiting, and bulkhead patterns
 - **[Logging](docs/common/logging.md)** - Comprehensive logging for all job lifecycle phases
 - **[MapStruct Mappers](docs/common/mappers.md)** - Guide to result transformation with MapStruct
-- **[SAGA Integration](docs/data-jobs/saga-integration.md)** - Distributed transactions and step events
+- **[SAGA Integration](docs/data-jobs/guide.md#saga-and-step-events)** - Distributed transactions and step events
 
 ### Reference
 - **[API Reference](docs/common/api-reference.md)** - Complete API documentation
@@ -1869,12 +1875,12 @@ For detailed documentation, see the [`docs/`](docs/) directory:
 ### Quick Links for Common Tasks
 
 #### Building Microservices
-- **Want to create a data job microservice from scratch?** → See [Step-by-Step Guide: Data Jobs](docs/data-jobs/step-by-step-guide.md)
+- **Want to create a data job microservice from scratch?** → See [Data Jobs — Complete Guide](docs/data-jobs/guide.md)
 - **Want to create a data enricher microservice from scratch?** → See [Step-by-Step Guide: Data Enricher Microservice](docs/data-enrichers/enricher-microservice-guide.md)
-- **Want to create a microservice with multiple data jobs?** → See [Multiple Jobs Example](docs/data-jobs/multiple-jobs-example.md)
+- **Want to create a microservice with multiple data jobs?** → See [Multiple Jobs in One Service](docs/data-jobs/guide.md#multiple-jobs-in-one-service)
 
 #### Specific Features
-- **Need synchronous jobs for quick operations?** → See [Synchronous Jobs Guide](docs/data-jobs/sync-jobs.md)
+- **Need synchronous jobs for quick operations?** → See [Quick Start (Sync)](docs/data-jobs/guide.md#quick-start-sync)
 - **Need to enrich data from third-party providers?** → See [Data Enrichment Guide](docs/data-enrichers/data-enrichment.md)
 - **Need provider-specific custom operations?** → See [Data Enricher Microservice Guide - Section 9](docs/data-enrichers/enricher-microservice-guide.md#9-building-enrichers-with-custom-operations)
 - **Need to understand the abstract base classes?** → See sections 2 and 3 in [Quick Start](#quick-start)

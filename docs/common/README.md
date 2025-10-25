@@ -222,7 +222,7 @@ These topics are relevant whether you're building data jobs, data enrichers, or 
 
 ## 🔗 Related Documentation
 
-- **[Data Jobs](../data-jobs/README.md)** - For orchestrated workflows
+- **[Data Jobs — Complete Guide](../data-jobs/guide.md)** - For orchestrated workflows
 - **[Data Enrichers](../data-enrichers/README.md)** - For third-party provider integration
 
 ---

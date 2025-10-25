@@ -15,7 +15,7 @@ For executing complex, multi-step workflows that interact with external systems 
 - Coordinating multi-step business processes
 - Batch processing and scheduled tasks
 
-**Learn More:** [Data Jobs Documentation →](data-jobs/README.md)
+**Learn More:** [Data Jobs — Complete Guide →](data-jobs/guide.md)
 
 ### 2. **Data Enrichers** - Third-Party Provider Integration
 For fetching and integrating data from external third-party providers (credit bureaus, financial data providers, business intelligence services, etc.).
@@ -35,7 +35,7 @@ For fetching and integrating data from external third-party providers (credit bu
 ### Choose Your Path
 
 **I want to build a data job microservice**
-→ See [Data Jobs - Step-by-Step Guide](data-jobs/step-by-step-guide.md)
+→ See the [Data Jobs — Complete Guide](data-jobs/guide.md)
 
 **I want to build a data enricher microservice**
 → See [Data Enrichers - Step-by-Step Guide](data-enrichers/enricher-microservice-guide.md)
@@ -50,12 +50,8 @@ For fetching and integrating data from external third-party providers (credit bu
 
 ## 📚 Documentation Structure
 
-### [Data Jobs](data-jobs/README.md)
-Documentation for building orchestrated workflows:
-- **[Step-by-Step Guide](data-jobs/step-by-step-guide.md)** - Complete guide from scratch (async jobs)
-- **[Synchronous Jobs Guide](data-jobs/sync-jobs.md)** - For quick operations (< 30 seconds)
-- **[Multiple Jobs Example](data-jobs/multiple-jobs-example.md)** - Real-world example with 3 job types
-- **[Job Lifecycle](data-jobs/job-lifecycle.md)** - Detailed explanation of job stages
+### [Data Jobs — Complete Guide](data-jobs/guide.md)
+Documentation for building orchestrated workflows (async and sync) in one place.
 
 ### [Data Enrichers](data-enrichers/README.md)
 Documentation for integrating with third-party providers:
@@ -80,7 +76,7 @@ Shared concepts, architecture, and utilities:
 
 ### Getting Started
 - **[Install the library](#installation)** - Add to your project
-- **[Create your first data job](data-jobs/step-by-step-guide.md)** - Step-by-step guide
+- **[Create your first data job](data-jobs/guide.md)** - Complete guide (async and sync)
 - **[Create your first enricher](data-enrichers/enricher-microservice-guide.md)** - Step-by-step guide
 
 ### Configuration
@@ -89,7 +85,7 @@ Shared concepts, architecture, and utilities:
 - **[Configure resiliency](common/resiliency.md)** - Circuit breaker, retry, rate limiting
 
 ### Advanced Topics
-- **[Implement SAGA patterns](data-jobs/saga-integration.md)** - Distributed transactions
+- **[Implement SAGA patterns](data-jobs/guide.md#saga-and-step-events)** - Distributed transactions
 - **[Create custom operations](data-enrichers/data-enrichment.md#provider-specific-custom-operations)** - Provider-specific workflows
 - **[Test your code](common/testing.md)** - Unit and integration testing
 
@@ -197,7 +193,7 @@ The library follows **Hexagonal Architecture** (Ports and Adapters):
 ## 📖 Documentation Index
 
 ### By Feature
-- **[Data Jobs](data-jobs/README.md)** - Orchestrated workflows
+- **[Data Jobs — Complete Guide](data-jobs/guide.md)** - Orchestrated workflows
 - **[Data Enrichers](data-enrichers/README.md)** - Third-party provider integration
 
 ### By Topic

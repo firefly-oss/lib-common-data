@@ -1,133 +1,87 @@
-# Data Jobs Documentation
+# Data Jobs Documentation (Internal Index)
 
-This section contains all documentation related to **Data Jobs** - orchestrated workflows for processing data from external systems.
+This folder contains the canonical documentation for Data Jobs in lib-common-data.
 
-## 📖 What are Data Jobs?
+- Canonical guide: [guide.md](guide.md)
+- This README exists to help you quickly find the right entry point and understand scope based on the actual code in this repository.
 
-Data Jobs are for executing complex, multi-step workflows that interact with external systems (databases, APIs, file systems, etc.). They support both **asynchronous** (long-running, multi-stage) and **synchronous** (quick, single-stage) execution models.
+## What are Data Jobs?
+Data Jobs are orchestrated workflows for data processing in core-data services. The library supports two execution models, both implemented in this repository:
+- Asynchronous jobs (multi-stage): START → CHECK → COLLECT → RESULT → STOP
+- Synchronous jobs (single-stage): EXECUTE (returns immediately)
 
-### Use Cases
-- Processing large datasets from external sources
-- Running ETL (Extract, Transform, Load) operations
-- Coordinating multi-step business processes
-- Batch processing and scheduled tasks
-- Quick data validation and transformation (sync jobs)
+See Architecture and API details in the guide: [guide.md](guide.md)
 
----
+## What the Code Actually Provides
+The documentation reflects the real implementation in the codebase. Key components and packages:
 
-## 🚀 Quick Start Guides
+- Services
+  - Async: `com.firefly.common.data.service.AbstractResilientDataJobService`
+  - Sync: `com.firefly.common.data.service.AbstractResilientSyncDataJobService`
 
-### For Beginners
-- **[Getting Started with Data Jobs](getting-started.md)** - Basic setup and first implementation
-- **[Step-by-Step Guide: Building a Data Job Microservice](step-by-step-guide.md)** - Complete guide from scratch
-  - Project setup with multi-module Maven
-  - Configuration (dev vs prod)
-  - Creating job orchestrators (MOCK, AWS Step Functions, Apache Airflow)
-  - Creating multiple data job services
-  - Creating controllers
-  - Testing and troubleshooting
+- Controllers (REST contracts and base classes)
+  - Async: `com.firefly.common.data.controller.DataJobController` (interface)
+  - Async base impl: `com.firefly.common.data.controller.AbstractDataJobController`
+  - Sync: `com.firefly.common.data.controller.SyncDataJobController` (interface)
+  - Sync base impl: `com.firefly.common.data.controller.AbstractSyncDataJobController`
 
-### For Specific Scenarios
-- **[Synchronous Jobs Guide](sync-jobs.md)** - For quick operations (< 30 seconds)
-- **[Multiple Jobs Example](multiple-jobs-example.md)** - Real-world example with 3 different job types
+- Configuration
+  - `com.firefly.common.data.config.JobOrchestrationProperties` (prefix: `firefly.data.orchestration`)
 
----
+These are referenced throughout the guide and in tests under `src/test/java/com/firefly/common/data/...`.
 
-## 📚 Core Concepts
+## Endpoints (As Implemented)
 
-### Job Types
+- Async (provided via controllers you create extending AbstractDataJobController):
+  - POST `/api/v1/jobs/start`
+  - GET `/api/v1/jobs/{executionId}/check`
+  - GET `/api/v1/jobs/{executionId}/collect`
+  - GET `/api/v1/jobs/{executionId}/result`
+  - POST `/api/v1/jobs/{executionId}/stop`
 
-#### Asynchronous Jobs (Multi-Stage)
-For long-running tasks that may take minutes or hours:
-- **START** - Initialize the job
-- **CHECK** - Monitor job progress
-- **COLLECT** - Gather results
-- **RESULT** - Return final data
-- **STOP** - Clean up resources
+- Sync (provided via controllers you create extending AbstractSyncDataJobController):
+  - POST `{base-path}/execute`
+    - base-path is defined by your controller’s `@RequestMapping`, e.g., `/api/v1/customer-validation` → POST `/api/v1/customer-validation/execute`
 
-**Best for**: Large data processing, external API calls, batch operations
+Note: Unlike Data Enrichers, Data Job controllers are NOT auto-registered. You must create concrete `@RestController` classes in your service that extend the abstract controllers.
 
-#### Synchronous Jobs (Single-Stage)
-For quick operations that complete in seconds:
-- **EXECUTE** - Single operation that returns immediately
+## Configuration (Matches Code)
+Centralized under `firefly.data.orchestration.*` → `JobOrchestrationProperties`:
+- `enabled` (boolean)
+- `orchestrator-type` (APACHE_AIRFLOW | AWS_STEP_FUNCTIONS | CUSTOM)
+- `default-timeout`
+- `max-retries`, `retry-delay`
+- `publish-job-events`, `job-events-topic`
+- `airflow.*`, `aws-step-functions.*`
+- `resiliency.*`, `observability.*`, `health-check.*`, `persistence.*`
 
-**Best for**: Data validation, quick transformations, simple lookups
+See examples in the guide and in docs/common/configuration.md.
 
-### Orchestrators
-- **MOCK** - For development and testing
-- **AWS Step Functions** - For AWS-based deployments
-- **Apache Airflow** - For complex workflow orchestration
-- **Custom** - Implement your own orchestrator
+## Migration Notice
+This guide replaces older fragmented docs. The following legacy files have been removed and consolidated into [guide.md](guide.md):
+- step-by-step-guide.md
+- sync-jobs.md
+- multiple-jobs-example.md
+- job-lifecycle.md
+- saga-integration.md
+- README.md (old index)
 
----
+If you encounter references to those files, update links to point to this folder’s [guide.md](guide.md) instead.
 
-## 📖 Reference Documentation
+## Quick Links
+- Complete Guide: [guide.md](guide.md)
+- API Reference: ../common/api-reference.md
+- Architecture Overview: ../common/architecture.md
+- Getting Started: ../common/getting-started.md
+- Observability: ../common/observability.md
+- Resiliency: ../common/resiliency.md
+- Logging: ../common/logging.md
+- Examples: ../common/examples.md
 
-### Architecture & Design
-- **[Job Lifecycle](job-lifecycle.md)** - Detailed explanation of job stages and data flow
-- **[Architecture Overview](../common/architecture.md)** - Hexagonal architecture and design patterns
+## Verification
+- The endpoint descriptions and controller responsibilities here align with:
+  - `AbstractDataJobController` and `DataJobController` for async
+  - `AbstractSyncDataJobController` and `SyncDataJobController` for sync
+- The sync endpoint path uses `{base-path}/execute`, matching the interface and base controller.
 
-### Configuration
-- **[Configuration Reference](../common/configuration.md)** - Comprehensive configuration options
-- **[Observability](../common/observability.md)** - Distributed tracing, metrics, and health checks
-- **[Resiliency](../common/resiliency.md)** - Circuit breaker, retry, rate limiting patterns
-- **[Logging](../common/logging.md)** - Comprehensive logging for all job lifecycle phases
-
-### Advanced Topics
-- **[SAGA Integration](saga-integration.md)** - Distributed transactions and step events
-- **[MapStruct Mappers](../common/mappers.md)** - Guide to result transformation
-- **[Testing Guide](../common/testing.md)** - Testing strategies and examples
-
----
-
-## 🎯 Common Tasks
-
-### I want to...
-
-**Create a new data job microservice**
-→ See [Step-by-Step Guide: Building a Data Job Microservice](step-by-step-guide.md)
-
-**Implement a quick synchronous job**
-→ See [Synchronous Jobs Guide](sync-jobs.md)
-
-**Add multiple jobs to one microservice**
-→ See [Multiple Jobs Example](multiple-jobs-example.md)
-
-**Understand the job lifecycle**
-→ See [Job Lifecycle](job-lifecycle.md)
-
-**Configure orchestrators**
-→ See [Configuration Reference](../common/configuration.md)
-
-**Add distributed tracing**
-→ See [Observability](../common/observability.md)
-
-**Implement SAGA patterns**
-→ See [SAGA Integration](saga-integration.md)
-
----
-
-## 🔗 Related Documentation
-
-- **[Data Enrichers](../data-enrichers/README.md)** - For integrating with third-party data providers
-- **[Common Documentation](../common/README.md)** - Shared concepts, architecture, and utilities
-
----
-
-## 📋 Document Index
-
-### Getting Started
-- [getting-started.md](getting-started.md) - Basic setup and first implementation
-- [step-by-step-guide.md](step-by-step-guide.md) - Complete guide from scratch
-- [sync-jobs.md](sync-jobs.md) - Synchronous jobs guide
-- [multiple-jobs-example.md](multiple-jobs-example.md) - Multiple jobs example
-
-### Core Concepts
-- [job-lifecycle.md](job-lifecycle.md) - Job stages and data flow
-
-### Advanced Topics
-- [saga-integration.md](saga-integration.md) - Distributed transactions
-
-### Reference
-- See [Common Documentation](../common/README.md) for shared reference materials
-
+If something drifts, please open an issue and reference the class names above to keep docs exact. Thanks!
